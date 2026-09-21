@@ -1,0 +1,16 @@
+# مخرجات البناء
+build/
+dist/
+.tools/
+*.idsig
+
+# مفاتيح التوقيع (لا ترفع مفتاحك أبداً)
+keystore.jks
+*.jks
+*.keystore
+
+# بيئات التطوير
+.idea/
+*.iml
+.vscode/
+.DS_Store

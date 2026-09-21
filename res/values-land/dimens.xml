@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="kb_key_height">42dp</dimen>
+    <dimen name="kb_row_gap">5dp</dimen>
+    <dimen name="kb_key_gap">4dp</dimen>
+    <dimen name="kb_side_pad">4dp</dimen>
+    <dimen name="kb_top_pad">6dp</dimen>
+    <dimen name="kb_bottom_pad">6dp</dimen>
+    <dimen name="emoji_panel_height">150dp</dimen>
+</resources>

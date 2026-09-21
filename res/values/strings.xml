@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">لوحة المفاتيح العربية</string>
+    <string name="ime_name">لوحة المفاتيح العربية</string>
+    <string name="subtype_ar">العربية</string>
+
+    <string name="act_search">بحث</string>
+    <string name="act_send">إرسال</string>
+    <string name="act_done">تم</string>
+    <string name="act_next">التالي</string>
+    <string name="act_go">اذهب</string>
+
+    <string name="header_title">لوحة المفاتيح العربية</string>
+    <string name="header_sub">لوحة مفاتيح متكاملة لجهازك: عربي وإنجليزي، أرقام، رموز، إيموجي، تمرير المؤشر، ومظاهر وألوان قابلة للتخصيص</string>
+
+    <string name="card_status_title">حالة لوحة المفاتيح</string>
+    <string name="btn_enable">١. تفعيل اللوحة في إعدادات النظام</string>
+    <string name="btn_choose">٢. اختيارها كلوحة الإدخال الحالية</string>
+    <string name="status_disabled">اللوحة غير مفعّلة بعد. اضغط الزر الأول، ثم في الشاشة التي تظهر بدّل مفتاح «لوحة المفاتيح العربية» إلى الوضع المفعّل، ثم اضغط الزر الثاني لاختيارها.</string>
+    <string name="status_enabled_not_selected">اللوحة مفعّلة ✔ — تبقى خطوة أخيرة: اضغط «اختيارها كلوحة الإدخال» ثم اخترها من القائمة.</string>
+    <string name="status_ready">اللوحة مفعّلة ومحدّدة كلوحة حالية ✔ — افتح أي تطبيق وابدأ الكتابة!</string>
+
+    <string name="card_settings_title">الإعدادات</string>
+    <string name="label_theme">المظهر</string>
+    <string name="theme_auto">تلقائي (حسب النظام)</string>
+    <string name="theme_light">نهاري</string>
+    <string name="theme_dark">ليلي</string>
+    <string name="theme_amoled">أسود كامل (AMOLED)</string>
+    <string name="label_accent">لون التمييز</string>
+    <string name="acc_blue">أزرق</string>
+    <string name="acc_teal">فيروزي</string>
+    <string name="acc_purple">بنفسجي</string>
+    <string name="acc_amber">ذهبي</string>
+    <string name="acc_red">أحمر</string>
+    <string name="label_height">حجم المفاتيح</string>
+    <string name="h_small">صغير</string>
+    <string name="h_medium">متوسط</string>
+    <string name="h_large">كبير</string>
+    <string name="sw_numrow">إظهار صف الأرقام دائماً فوق الحروف</string>
+    <string name="sw_autocap">حرف كبير تلقائي في الإنجليزية</string>
+    <string name="sw_double_space">نقطة تلقائية بضغطتين على المسافة</string>
+    <string name="sw_sound">صوت عند الضغط على الأزرار</string>
+    <string name="sw_haptic">اهتزاز عند الضغط على الأزرار</string>
+    <string name="settings_note">تُطبَّق التغييرات عند إعادة فتح لوحة المفاتيح في أي تطبيق.</string>
+
+    <string name="card_try_title">جرّب لوحة المفاتيح</string>
+    <string name="try_hint">اكتب هنا بالعربية أو الإنجليزية…</string>
+
+    <string name="footer_tips">نصائح: اضغط مطولاً على ⇧ للتفعيل الدائم (Caps Lock) — اضغط مطولاً على أي حرف لعرض رموز وحركات إضافية — اسحب يميناً أو يساراً على زر المسافة لتحريك المؤشر — بضغطتين متتاليتين على المسافة تحصل على نقطة — زر اللغة يبدّل بين العربية والإنجليزية وفتحه مطولاً يفتح الإعدادات.</string>
+</resources>
