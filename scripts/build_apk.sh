@@ -14,8 +14,20 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ="$(dirname "$SCRIPT_DIR")"
 
-SDK="${ANDROID_SDK_ROOT:-/home/z/my-project/android-sdk}"
+# اكتشاف مسار Android SDK تلقائياً
 BT_VERSION="${ANDROID_BUILD_TOOLS:-34.0.0}"
+SDK="${ANDROID_SDK_ROOT:-}"
+if [ -z "$SDK" ]; then
+    for CAND in "$HOME/Android/Sdk" \
+                "/usr/local/lib/android/sdk" "/opt/android-sdk" \
+                "/home/z/my-project/android-sdk"; do
+        if [ -n "$CAND" ] && [ -d "$CAND/build-tools" ]; then
+            SDK="$CAND"
+            break
+        fi
+    done
+fi
+[ -z "$SDK" ] && { echo "خطأ: لم يتم العثور على Android SDK — اضبط ANDROID_SDK_ROOT"; exit 1; }
 BT="$SDK/build-tools/$BT_VERSION"
 PLAT="$SDK/platforms/android-34/android.jar"
 
