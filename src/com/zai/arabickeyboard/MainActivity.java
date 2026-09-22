@@ -7,7 +7,10 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -15,16 +18,17 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
-import android.widget.Switch;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -33,363 +37,813 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-/** الشاشة الرئيسية: التفعيل، الثيمات، الإعدادات بالأقسام، التجربة — DRS Smart v2.0 */
+/**
+ * التطبيق الرئيسي — DRS Smart Keyboard v2.5
+ * تطبيق متعدد الشاشات بتصميم عصري موحد وخمسة أقسام:
+ *   الرئيسية (حالة + اختصارات سريعة + تجربة) — الثيمات — الإعدادات — الفحص الذكي — حول
+ * تنقّل سفلي بأيقونات مرسومة، انتقالات ناعمة، وهوية بصرية متكاملة.
+ */
 public class MainActivity extends Activity {
+
+    private static final int TAB_HOME = 0;
+    private static final int TAB_THEMES = 1;
+    private static final int TAB_SETTINGS = 2;
+    private static final int TAB_DIAG = 3;
+    private static final int TAB_ABOUT = 4;
+    private static final int TAB_COUNT = 5;
+    private static final String[] TAB_LABELS = {
+            "الرئيسية", "الثيمات", "الإعدادات", "الفحص الذكي", "حول"
+    };
 
     private Prefs prefs;
     private SuggestEngine engine;
-    private TextView tvStatus;
-    private TextView tvDictCount;
-    private LinearLayout stResults;
     private InputMethodManager imm;
-    private LinearLayout sections;
+
+    private FrameLayout content;
+    private final ScrollView[] screens = new ScrollView[TAB_COUNT];
+    private final LinearLayout[] navItems = new LinearLayout[TAB_COUNT];
+    private int currentTab = TAB_HOME;
+    private final boolean[] stale = new boolean[TAB_COUNT];
+
+    // مراجع التحديث الحي
+    private LinearLayout statusBox;        // بطاقة الحالة في الرئيسية
+    private TextView dictCountTv;          // عداد القاموس في الإعدادات
+    private LinearLayout shortcutsBox;     // حاوية الاختصارات في الإعدادات
+    private ScoreRing scoreRing;           // حلقة النتيجة
+    private LinearLayout diagResults;      // نتائج الفحص
+    private boolean diagEverRun = false;
+    private SelfTest.Report lastReport;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         CrashGuard.install(this); // نظام الحماية الذكي من الأعطال
-        setContentView(R.layout.activity_main);
         prefs = new Prefs(this);
         engine = new SuggestEngine(this);
         imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        sections = (LinearLayout) findViewById(R.id.sections);
-
-        tvStatus = new TextView(this);
-        buildSections();
+        buildRoot();
     }
 
-    private void buildSections() {
-        sections.removeAllViews();
+    // ==================== الهيكل العام ====================
+
+    private void buildRoot() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(UiKit.PAGE_BG);
+
+        // ===== الشريط العلوي =====
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setBackground(UiKit.rounded(0x00000000, 0, this));
+        header.setPadding(dp(20), dp(18), dp(20), dp(14));
+
+        View logo = new View(this);
+        GradientDrawable lg = UiKit.accentGradient(this, 12);
+        logo.setBackground(lg);
+        header.addView(logo, new LinearLayout.LayoutParams(dp(34), dp(34)));
+
+        TextView hTitle = new TextView(this);
+        hTitle.setText("DRS Smart Keyboard");
+        hTitle.setTextSize(18);
+        hTitle.setTypeface(UiKit.bold());
+        hTitle.setTextColor(UiKit.TEXT_MAIN);
+        LinearLayout.LayoutParams htLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        htLp.setMargins(dp(12), 0, dp(8), 0);
+        header.addView(hTitle, htLp);
+
+        TextView ver = UiKit.chip(this, "v" + BuildInfo.VERSION_NAME,
+                0x227C5CFF, 0x557C5CFF, UiKit.ACCENT_SOFT);
+        header.addView(ver);
+
+        LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hLp.setMargins(dp(8), dp(4), dp(8), 0);
+        root.addView(header, hLp);
+
+        // ===== محتوى الشاشات =====
+        content = new FrameLayout(this);
+        LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        root.addView(content, cLp);
+
+        // ===== شريط التنقل السفلي =====
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setBackground(UiKit.outlined(UiKit.NAV_BG, 0, UiKit.CARD_STROKE, 1, this));
+        nav.setPadding(dp(6), dp(8), dp(6), dp(10));
+        for (int i = 0; i < TAB_COUNT; i++) {
+            navItems[i] = navItem(i);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            nav.addView(navItems[i], lp);
+        }
+        LinearLayout.LayoutParams nLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        root.addView(nav, nLp);
+
+        setContentView(root);
+        for (int i = 0; i < TAB_COUNT; i++) {
+            screens[i] = buildScreen(i);
+            content.addView(screens[i], new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        highlightNav(TAB_HOME);
+    }
+
+    /** عنصر واحد في شريط التنقل: أيقونة مرسومة + عنوان */
+    private LinearLayout navItem(final int index) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setClickable(true);
+        item.setBackground(UiKit.rounded(0x00000000, 14, this));
+        item.setPadding(0, dp(5), 0, dp(5));
+
+        TabIcon icon = new TabIcon(this, index);
+        item.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+
+        TextView label = new TextView(this);
+        label.setText(TAB_LABELS[index]);
+        label.setTextSize(9.5f);
+        label.setTypeface(UiKit.medium());
+        label.setTextColor(UiKit.TEXT_FAINT);
+        label.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lLp.setMargins(0, dp(3), 0, 0);
+        item.addView(label, lLp);
+        item.setTag(label);
+
+        item.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showTab(index); }
+        });
+        return item;
+    }
+
+    private void highlightNav(int active) {
+        for (int i = 0; i < TAB_COUNT; i++) {
+            LinearLayout item = navItems[i];
+            boolean on = i == active;
+            item.setBackground(on ? UiKit.rounded(0x1F7C5CFF, 14, this)
+                                  : UiKit.rounded(0x00000000, 14, this));
+            TextView label = (TextView) item.getTag();
+            label.setTextColor(on ? UiKit.ACCENT_SOFT : UiKit.TEXT_FAINT);
+            ((TabIcon) item.getChildAt(0)).setActive(on);
+        }
+    }
+
+    /** تبديل الشاشة مع انتقال ناعم وإعادة بناء إن لزم */
+    private void showTab(int index) {
+        if (index == currentTab && screens[index].getVisibility() == View.VISIBLE) return;
+        currentTab = index;
+        highlightNav(index);
+        if (stale[index]) { rebuildScreen(index); stale[index] = false; }
+        for (int i = 0; i < TAB_COUNT; i++) {
+            screens[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
+        }
+        Animation fade = new AlphaAnimation(0.55f, 1f);
+        fade.setDuration(180);
+        screens[index].startAnimation(fade);
+        if (index == TAB_DIAG && !diagEverRun) runDiag();
+    }
+
+    private void rebuildScreen(int index) {
+        content.removeView(screens[index]);
+        screens[index] = buildScreen(index);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        lp.setMargins(dp(8), dp(4), dp(8), dp(8));
+        content.addView(screens[index], lp);
+        screens[index].setVisibility(index == currentTab ? View.VISIBLE : View.GONE);
+        stale[index] = false;
+    }
+
+    /** بناء شاشة رقم i */
+    private ScrollView buildScreen(int index) {
+        ScrollView sv = new ScrollView(this);
+        sv.setFillViewport(true);
+        sv.setBackgroundColor(UiKit.PAGE_BG);
+        sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout page = UiKit.vstack(this);
+        int padTop = index == TAB_HOME ? dp(2) : dp(6);
+        page.setPadding(dp(6), padTop, dp(6), dp(10));
+        sv.addView(page, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        switch (index) {
+            case TAB_HOME:     buildHome(page); break;
+            case TAB_THEMES:   buildThemes(page); break;
+            case TAB_SETTINGS: buildSettings(page); break;
+            case TAB_DIAG:     buildDiag(page); break;
+            default:           buildAbout(page); break;
+        }
+        return sv;
+    }
+
+    private void markStale(int index) { stale[index] = true; }
+
+        // ==================== الشاشة ١: الرئيسية ====================
+
+    private void buildHome(LinearLayout page) {
+        // ===== بطاقة الترحيب المتدرجة =====
+        LinearLayout hero = UiKit.vstack(this);
+        hero.setBackground(UiKit.heroGradient(this));
+        hero.setPadding(dp(20), dp(22), dp(20), dp(20));
+
+        TextView heroTitle = UiKit.text(this, "لوحة المفاتيح العربية الذكية", 21, 0xFFFFFFFF, true);
+        hero.addView(heroTitle);
+        hero.addView(UiKit.text(this,
+                "ست لغات · تنبؤ وتصحيح · كتابة بالسحب · ١٦ ثيماً · فحص ذكي متكامل",
+                12.5f, 0xFFC6CDF2, false));
+
+        LinearLayout heroChips = UiKit.hstack(this);
+        heroChips.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams hcLp0 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hcLp0.setMargins(0, dp(12), dp(6), 0);
+        heroChips.addView(UiKit.chip(this, "✓ مفتوح المصدر", 0x22FFFFFF, 0x44FFFFFF, 0xFFE8ECFF), hcLp0);
+        LinearLayout.LayoutParams hcLp1 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hcLp1.setMargins(0, dp(12), dp(6), 0);
+        heroChips.addView(UiKit.chip(this, "بدون إعلانات", 0x22FFFFFF, 0x44FFFFFF, 0xFFE8ECFF), hcLp1);
+        LinearLayout.LayoutParams hcLp2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hcLp2.setMargins(0, dp(12), 0, 0);
+        heroChips.addView(UiKit.chip(this, "خصوصية كاملة", 0x22FFFFFF, 0x44FFFFFF, 0xFFE8ECFF), hcLp2);
+        hero.addView(heroChips);
+        addCard(page, hero, 14);
 
         // ===== بطاقة الحالة =====
-        LinearLayout statusCard = card();
-        statusCard.addView(label(R.string.card_status_title, 17, R.color.text_main, true));
-        tvStatus.setTextSize(14);
-        tvStatus.setLineSpacing(dp3(), 1f);
-        tvStatus.setTextColor(0xFF9AA3D0);
+        statusBox = UiKit.vstack(this);
+        addCard(page, wrapCard(statusBox), 8);
+        fillStatusBox();
+
+        // ===== أرقام سريعة =====
+        LinearLayout stats = new LinearLayout(this);
+        stats.setOrientation(LinearLayout.HORIZONTAL);
+        stats.addView(statTile(arabicNum(engine.learnedCount()), "كلمة تعلّمتها"));
+        stats.addView(statTile(arabicNum(engine.getShortcuts().size()), "اختصار نصي"));
+        stats.addView(statTile(arabicNum(countEmojis()), "إيموجي جاهز"));
+        addCard(page, stats, 8);
+
+        // ===== أزرار وصول سريع =====
+        LinearLayout tiles = new LinearLayout(this);
+        tiles.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+
+        LinearLayout t1 = UiKit.tile(this, "🎨", "الثيمات", "١٦ ثيماً و٨ ألوان", new View.OnClickListener() {
+            @Override public void onClick(View v) { showTab(TAB_THEMES); }
+        });
+        LinearLayout t2 = UiKit.tile(this, "🛡", "الفحص الذكي", "١٤ فحصاً شاملاً", new View.OnClickListener() {
+            @Override public void onClick(View v) { showTab(TAB_DIAG); }
+        });
+        LinearLayout t3 = UiKit.tile(this, "⚙", "الإعدادات", "تحكم كامل", new View.OnClickListener() {
+            @Override public void onClick(View v) { showTab(TAB_SETTINGS); }
+        });
+        LinearLayout t4 = UiKit.tile(this, "ℹ", "حول التطبيق", "دليل الاستخدام", new View.OnClickListener() {
+            @Override public void onClick(View v) { showTab(TAB_ABOUT); }
+        });
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(96), 1f);
+        half.setMargins(dp(4), dp(4), dp(4), dp(4));
+        row1.addView(t1, half);
+        row1.addView(t2, half);
+        row2.addView(t3, half);
+        row2.addView(t4, half);
+        tiles.addView(row1);
+        tiles.addView(row2);
+        addCard(page, tiles, 8);
+
+        // ===== بطاقة التجربة =====
+        LinearLayout tryCard = UiKit.card(this);
+        tryCard.addView(UiKit.title(this, "جرّب اللوحة الآن"));
+        tryCard.addView(UiKit.body(this, "اكتب هنا بالعربية أو الإنجليزية لتجربة التنبؤ والتصحيح والسحب مباشرة."));
+        EditText et = UiKit.field(this, "اكتب هنا بالعربية أو الإنجليزية...", 2);
+        LinearLayout.LayoutParams etLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        etLp.setMargins(0, dp(10), 0, 0);
+        tryCard.addView(et, etLp);
+        addCard(page, tryCard, 8);
+    }
+
+    /** تعبئة بطاقة الحالة (تُستدعى عند البناء وعند كل استئناف) */
+    private void fillStatusBox() {
+        if (statusBox == null) return;
+        statusBox.removeAllViews();
+
+        boolean enabled = isEnabledBySystem();
+        boolean selected = isSelected();
+        int color = selected ? UiKit.GREEN : (enabled ? UiKit.AMBER : UiKit.TEXT_SUB);
+        String title = selected ? "اللوحة جاهزة للكتابة"
+                : (enabled ? "مفعّلة — بقي خطوة واحدة" : "اللوحة غير مفعّلة بعد");
+        String desc = selected
+                ? "يمكنك استخدامها في أي تطبيق الآن — جرّبها في صندوق التجربة بالأسفل."
+                : (enabled ? "اخترها كلوحة إدخال حالية من الزر الثاني بالأسفل."
+                : "فعّل اللوحة من إعدادات النظام بخطوة واحدة ثم اخترها كلوحة حالية.");
+
+        LinearLayout head = UiKit.hstack(this);
+        View dot = new View(this);
+        GradientDrawable dg = new GradientDrawable();
+        dg.setShape(GradientDrawable.OVAL);
+        dg.setColor(color);
+        dot.setBackground(dg);
+        head.addView(dot, new LinearLayout.LayoutParams(dp(12), dp(12)));
+        TextView st = UiKit.text(this, title, 16, color, true);
         LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        stLp.setMargins(0, dp(10), 0, 0);
-        statusCard.addView(tvStatus, stLp);
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        stLp.setMargins(dp(10), 0, 0, 0);
+        head.addView(st, stLp);
+        statusBox.addView(head);
 
-        statusCard.addView(primaryButton(R.string.btn_enable, new View.OnClickListener() {
+        statusBox.addView(UiKit.text(this, desc, 13, UiKit.TEXT_SUB, false));
+
+        if (!selected) {
+            if (!enabled) {
+                statusBox.addView(UiKit.primaryButton(this, "① تفعيل اللوحة في إعدادات النظام",
+                        new View.OnClickListener() {
+                            @Override public void onClick(View v) {
+                                try {
+                                    startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS));
+                                } catch (Exception e) {
+                                    Toast.makeText(MainActivity.this, "افتح: الإعدادات ← اللغة والإدخال", Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        }));
+            }
+            statusBox.addView(UiKit.secondaryButton(this, enabled
+                            ? "② اختيارها كلوحة الإدخال الحالية" : "② اختيارها كلوحة الإدخال",
+                    new View.OnClickListener() {
+                        @Override public void onClick(View v) {
+                            if (imm != null) imm.showInputMethodPicker();
+                        }
+                    }));
+        } else {
+            statusBox.addView(UiKit.secondaryButton(this, "تغيير لوحة الإدخال الحالية",
+                    new View.OnClickListener() {
+                        @Override public void onClick(View v) {
+                            if (imm != null) imm.showInputMethodPicker();
+                        }
+                    }));
+        }
+    }
+
+    private LinearLayout statTile(String value, String label) {
+        LinearLayout t = UiKit.vstack(this);
+        t.setGravity(Gravity.CENTER);
+        t.setBackground(UiKit.outlined(UiKit.TILE_BG, 16, UiKit.CARD_STROKE, 1, this));
+        t.setPadding(dp(6), dp(14), dp(6), dp(14));
+        TextView v = UiKit.text(this, value, 20, UiKit.ACCENT_SOFT, true);
+        v.setGravity(Gravity.CENTER);
+        t.addView(v);
+        TextView l = UiKit.text(this, label, 11, UiKit.TEXT_SUB, false);
+        l.setGravity(Gravity.CENTER);
+        t.addView(l);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(5), 0, dp(5), 0);
+        t.setLayoutParams(lp);
+        return t;
+    }
+
+    // ==================== الشاشة ٤: الفحص الذكي ====================
+
+    private void buildDiag(LinearLayout page) {
+        LinearLayout ringCard = UiKit.card(this);
+        ringCard.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        scoreRing = new ScoreRing(this);
+        if (lastReport != null) scoreRing.setScore(lastReport.score);
+        LinearLayout.LayoutParams ringLp = new LinearLayout.LayoutParams(dp(150), dp(150));
+        ringLp.gravity = Gravity.CENTER_HORIZONTAL;
+        ringLp.setMargins(0, dp(6), 0, dp(6));
+        ringCard.addView(scoreRing, ringLp);
+
+        TextView ringSub = UiKit.text(this,
+                "الفحص الذكي المتكامل — ١٤ فحصاً تغطي النظام والتخطيطات والقواميس والثيمات والموارد",
+                12.5f, UiKit.TEXT_SUB, false);
+        ringSub.setGravity(Gravity.CENTER);
+        ringCard.addView(ringSub);
+
+        ringCard.addView(UiKit.primaryButton(this, "تشغيل الفحص الشامل الآن", new View.OnClickListener() {
+            @Override public void onClick(View v) { runDiag(); }
+        }));
+        addCard(page, ringCard, 12);
+
+        diagResults = UiKit.vstack(this);
+        addCard(page, wrapCard(diagResults), 8);
+        if (lastReport != null) renderDiagResults();
+        else diagResults.addView(UiKit.body(this,
+                "اضغط «تشغيل الفحص الشامل» لعرض تقرير مفصل لكل مكوّنات اللوحة، مع إصلاح ذاتي للإعدادات التالفة."));
+    }
+
+    /** تشغيل الفحص الشامل ثم عرض النتائج */
+    private void runDiag() {
+        if (diagResults == null) { diagEverRun = false; return; }
+        diagEverRun = true;
+        diagResults.removeAllViews();
+        TextView running = UiKit.text(this, "⏳ جارٍ فحص كل المكوّنات...", 14, UiKit.AMBER, true);
+        diagResults.addView(running);
+
+        SelfTest.Report rep = null;
+        try {
+            rep = SelfTest.runAll(this);
+        } catch (Throwable t) {
+            CrashGuard.log(t);
+        }
+        lastReport = rep;
+        diagResults.removeAllViews();
+        if (rep == null) {
+            diagResults.addView(UiKit.text(this, "تعذّر إتمام الفحص — جرّب مرة أخرى.", 14, UiKit.RED, true));
+            return;
+        }
+        if (scoreRing != null) scoreRing.setScore(rep.score);
+        renderDiagResults();
+    }
+
+    /** عرض نتائج الفحص داخل بطاقة النتائج */
+    private void renderDiagResults() {
+        if (diagResults == null || lastReport == null) return;
+        SelfTest.Report rep = lastReport;
+
+        TextView sum = UiKit.text(this, rep.summary, 15,
+                rep.failed == 0 ? UiKit.GREEN : (rep.score >= 60 ? UiKit.AMBER : UiKit.RED), true);
+        diagResults.addView(sum);
+
+        if (rep.healed) {
+            diagResults.addView(UiKit.text(this, "🔧 " + rep.healNote, 12.5f, UiKit.GREEN, false));
+        }
+
+        for (final SelfTest.Result x : rep.results) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.TOP);
+
+            TextView mark = new TextView(this);
+            switch (x.status) {
+                case SelfTest.PASS: mark.setText("✔"); mark.setTextColor(UiKit.GREEN); break;
+                case SelfTest.WARN: mark.setText("⚠"); mark.setTextColor(UiKit.AMBER); break;
+                case SelfTest.FAIL: mark.setText("✖"); mark.setTextColor(UiKit.RED); break;
+                default: mark.setText("ℹ"); mark.setTextColor(0xFF8A93C4); break;
+            }
+            mark.setTextSize(15);
+            mark.setTypeface(UiKit.bold());
+            mark.setPadding(0, dp(2), dp(10), 0);
+            row.addView(mark, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            LinearLayout col = UiKit.vstack(this);
+            col.addView(UiKit.text(this, x.name, 14, UiKit.TEXT_MAIN, true));
+            col.addView(UiKit.text(this, x.detail, 12, UiKit.TEXT_SUB, false));
+            row.addView(col, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            rowLp.setMargins(0, dp(10), 0, 0);
+            diagResults.addView(row, rowLp);
+        }
+
+        if (CrashGuard.hasReport()) {
+            String s = CrashGuard.lastReportSummary();
+            diagResults.addView(UiKit.notice(this,
+                    "آخر عطل مسجل:\n" + (s == null ? "—" : s),
+                    0xFF1A0E12, 0xFF5A2430, UiKit.RED));
+            diagResults.addView(UiKit.secondaryButton(this, "مسح سجل الأعطال", new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    CrashGuard.clearReport();
+                    Toast.makeText(MainActivity.this, "تم مسح السجل", Toast.LENGTH_SHORT).show();
+                    rebuildScreen(TAB_DIAG);
+                }
+            }));
+        }
+
+        diagResults.addView(UiKit.secondaryButton(this, "نسخ التقرير كاملاً", new View.OnClickListener() {
             @Override public void onClick(View v) {
-                startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS));
+                try {
+                    if (lastReport == null) return;
+                    ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("DRS-SelfTest",
+                            SelfTest.buildReport(lastReport)));
+                    Toast.makeText(MainActivity.this, "نُسخ التقرير إلى الحافظة", Toast.LENGTH_SHORT).show();
+                } catch (Exception ignored) {}
             }
         }));
-        statusCard.addView(secondaryButton(R.string.btn_choose, new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if (imm != null) imm.showInputMethodPicker();
-            }
-        }));
-        addCard(statusCard);
+    }
 
-        // ===== بطاقة الفحص الذكي المتكامل =====
-        addCard(buildSelfTestCard());
+    // ==================== الشاشة ٢: الثيمات ====================
 
-        // ===== بطاقة الثيمات =====
-        LinearLayout themeCard = card();
-        themeCard.addView(label(R.string.label_theme, 17, R.color.text_main, true));
+    private void buildThemes(LinearLayout page) {
+        LinearLayout head = UiKit.card(this);
+        head.addView(UiKit.title(this, "معرض الثيمات"));
+        head.addView(UiKit.body(this,
+                "١٦ ثيماً مصممة بعناية — تتبدل تلقائياً بين النهاري والليلي حسب نظام جهازك، مع ٨ ألوان تمييز تطبّق فوراً على اللوحة."));
+        addCard(page, head, 12);
+
+        // شبكة الثيمات — عمودان بمعاينة كبيرة
         GridLayout grid = new GridLayout(this);
-        grid.setColumnCount(4);
+        grid.setColumnCount(2);
         for (int i = 0; i < ThemeSet.NAMES.length; i++) {
             final int idx = i;
-            LinearLayout cell = new LinearLayout(this);
-            cell.setOrientation(LinearLayout.VERTICAL);
+            boolean sel = idx == prefs.themePreset;
+            int[] pv = ThemeSet.PREVIEW[idx];
+
+            LinearLayout cell = UiKit.vstack(this);
             cell.setGravity(Gravity.CENTER);
+            cell.setPadding(dp(10), dp(12), dp(10), dp(12));
             cell.setClickable(true);
-            cell.setPadding(dp(6), dp(8), dp(6), dp(8));
+            cell.setBackground(UiKit.outlined(sel ? 0x337C5CFF : UiKit.TILE_BG,
+                    18, sel ? UiKit.ACCENT : UiKit.CARD_STROKE, sel ? 1.6f : 1, this));
             cell.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     prefs.setThemePreset(idx);
-                    buildSections();
+                    markStale(TAB_THEMES);
+                    rebuildScreen(TAB_THEMES);
+                    Toast.makeText(MainActivity.this, "ثيم: " + ThemeSet.NAMES[idx], Toast.LENGTH_SHORT).show();
                 }
             });
 
+            // معاينة مصغّرة للوحة
             FrameLayout previewWrap = new FrameLayout(this);
-            int[] pv = ThemeSet.PREVIEW[idx];
-            GradientDrawable bg = new GradientDrawable();
-            bg.setCornerRadius(dp(10));
-            bg.setColor(pv[0]);
-            bg.setStroke(idx == prefs.themePreset ? dp(2) : dp(1),
-                    idx == prefs.themePreset ? pv[2] : 0xFF2A3562);
-            View pv1 = new View(this);
-            pv1.setBackground(bg);
-            previewWrap.addView(pv1, new FrameLayout.LayoutParams(dp(56), dp(40)));
+            View bg = new View(this);
+            GradientDrawable bgg = UiKit.rounded(pv[0], 12, this);
+            bgg.setStroke(dp(1), 0x33000000);
+            bg.setBackground(bgg);
+            previewWrap.addView(bg, new FrameLayout.LayoutParams(dp(120), dp(76)));
 
-            // شريط لون التمييز أسفل المعاينة
-            GradientDrawable bar = new GradientDrawable();
-            bar.setCornerRadius(dp(2));
-            bar.setColor(pv[2]);
-            View barV = new View(this);
-            barV.setBackground(bar);
-            FrameLayout.LayoutParams barLp = new FrameLayout.LayoutParams(
-                    dp(38), dp(4), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            barLp.bottomMargin = dp(4);
-            previewWrap.addView(barV, barLp);
-
-            // مفاتيح وهمية داخل المعاينة
-            LinearLayout keysRow = new LinearLayout(this);
-            keysRow.setGravity(Gravity.CENTER);
-            for (int k = 0; k < 4; k++) {
-                GradientDrawable kb = new GradientDrawable();
-                kb.setCornerRadius(dp(2.5f));
-                kb.setColor(pv[1]);
-                View kv1 = new View(this);
-                kv1.setBackground(kb);
-                LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(dp(8), dp(6));
-                klp.setMargins(dp(1), 0, dp(1), 0);
-                keysRow.addView(kv1, klp);
+            LinearLayout keysCol = UiKit.vstack(this);
+            keysCol.setGravity(Gravity.CENTER);
+            int[] rowsK = {5, 5, 4};
+            for (int rr = 0; rr < 3; rr++) {
+                LinearLayout kr = new LinearLayout(this);
+                kr.setGravity(Gravity.CENTER);
+                for (int k = 0; k < rowsK[rr]; k++) {
+                    View kv = new View(this);
+                    kv.setBackground(UiKit.rounded(pv[1], 3, this));
+                    LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(dp(13), dp(10));
+                    klp.setMargins(dp(2), dp(1), dp(2), dp(1));
+                    kr.addView(kv, klp);
+                }
+                keysCol.addView(kr);
             }
-            FrameLayout.LayoutParams keysLp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER);
-            keysLp.bottomMargin = dp(8);
-            previewWrap.addView(keysRow, keysLp);
+            // شريط التمييز أسفل المعاينة
+            View bar = new View(this);
+            bar.setBackground(UiKit.rounded(pv[2], 2, this));
+            FrameLayout.LayoutParams barLp = new FrameLayout.LayoutParams(
+                    dp(70), dp(5), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            barLp.bottomMargin = dp(8);
+            previewWrap.addView(keysCol, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+            previewWrap.addView(bar, barLp);
+            cell.addView(previewWrap);
 
+            LinearLayout nameRow = UiKit.hstack(this);
+            nameRow.setGravity(Gravity.CENTER);
             TextView name = new TextView(this);
             name.setText(ThemeSet.NAMES[idx]);
-            name.setTextSize(11);
-            name.setTextColor(idx == prefs.themePreset ? pv[2] : 0xFF9AA3D0);
-            name.setPadding(0, dp(4), 0, 0);
+            name.setTextSize(13);
+            name.setTypeface(sel ? UiKit.bold() : UiKit.medium());
+            name.setTextColor(sel ? UiKit.ACCENT_SOFT : UiKit.TEXT_SUB);
+            nameRow.addView(name);
+            if (sel) {
+                TextView chk = new TextView(this);
+                chk.setText(" ✓");
+                chk.setTextSize(13);
+                chk.setTypeface(UiKit.bold());
+                chk.setTextColor(UiKit.ACCENT_SOFT);
+                nameRow.addView(chk);
+            }
+            LinearLayout.LayoutParams nLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            nLp.setMargins(0, dp(8), 0, 0);
+            cell.addView(nameRow, nLp);
 
-            cell.addView(previewWrap, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            cell.addView(name, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             GridLayout.LayoutParams glp = new GridLayout.LayoutParams();
             glp.width = 0;
             glp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+            glp.setMargins(dp(4), dp(4), dp(4), dp(4));
             grid.addView(cell, glp);
         }
-        themeCard.addView(grid, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        themeCard.addView(label(R.string.label_accent, 12, R.color.text_sub, false));
-        addCard(themeCard);
+        addCard(page, grid, 8);
 
-        // ===== الكتابة الذكية =====
-        LinearLayout typingCard = card();
-        typingCard.addView(label(R.string.section_typing, 17, R.color.text_main, true));
-        addSwitch(typingCard, R.string.sw_suggest, prefs.suggest, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setSuggest(b); }
-        });
-        addSwitch(typingCard, R.string.sw_autocorrect, prefs.autoCorrect, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setAutoCorrect(b); }
-        });
-        addSwitch(typingCard, R.string.sw_numrow, prefs.numRow, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setNumRow(b); }
-        });
-        addSwitch(typingCard, R.string.sw_autocap, prefs.autoCap, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setAutoCap(b); }
-        });
-        addSwitch(typingCard, R.string.sw_double_space, prefs.doubleSpace, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setDoubleSpace(b); }
-        });
-        addSwitch(typingCard, R.string.sw_next_word, prefs.nextWord, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setNextWord(b); }
-        });
-        addSwitch(typingCard, R.string.sw_glide, prefs.glide, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setGlide(b); }
-        });
-        addSwitch(typingCard, R.string.sw_incognito, prefs.incognito, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setIncognito(b); }
-        });
-        addCard(typingCard);
+        // ===== ألوان التمييز =====
+        LinearLayout accentCard = UiKit.card(this);
+        accentCard.addView(UiKit.title(this, "لون التمييز"));
+        accentCard.addView(UiKit.body(this, "يلوّن أزرار الوظائف وشريط الاقتراحات في اللوحة."));
 
-        // ===== الصوت والاهتزاز =====
-        LinearLayout soundCard = card();
-        soundCard.addView(label(R.string.section_sound, 17, R.color.text_main, true));
-        addSwitch(soundCard, R.string.sw_sound, prefs.sound, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setSound(b); }
-        });
-        addSwitch(soundCard, R.string.sw_haptic, prefs.haptics, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setHaptics(b); }
-        });
-        soundCard.addView(label(R.string.label_sound_style, 14, R.color.text_sub, false));
-        soundCard.addView(radioRow(new String[]{
-                getString(R.string.snd_classic), getString(R.string.snd_digital), getString(R.string.snd_soft)
-        }, prefs.soundStyle, new IntListener() {
-            @Override public void on(int i) { prefs.setSoundStyle(i); }
-        }));
-        addCard(soundCard);
-
-        // ===== التنسيق =====
-        LinearLayout layoutCard = card();
-        layoutCard.addView(label(R.string.section_layout, 17, R.color.text_main, true));
-        layoutCard.addView(label(R.string.label_height, 14, R.color.text_sub, false));
-        layoutCard.addView(radioRow(new String[]{
-                getString(R.string.h_small), getString(R.string.h_medium), getString(R.string.h_large)
-        }, prefs.keyHeight, new IntListener() {
-            @Override public void on(int i) { prefs.setKeyHeight(i); }
-        }));
-        layoutCard.addView(label(R.string.label_onehand, 14, R.color.text_sub, false));
-        layoutCard.addView(radioRow(new String[]{
-                getString(R.string.oh_center), getString(R.string.oh_right), getString(R.string.oh_left)
-        }, prefs.oneHanded, new IntListener() {
-            @Override public void on(int i) { prefs.setOneHanded(i); }
-        }));
-        layoutCard.addView(label(R.string.label_longpress, 14, R.color.text_sub, false));
-        layoutCard.addView(radioRow(new String[]{
-                getString(R.string.lp_fast), getString(R.string.lp_normal), getString(R.string.lp_slow)
-        }, prefs.longPressIdx, new IntListener() {
-            @Override public void on(int i) { prefs.setLongPressIdx(i); }
-        }));
-        addSwitch(layoutCard, R.string.sw_voice, prefs.voice, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setVoice(b); }
-        });
-        addSwitch(layoutCard, R.string.sw_arabic_digits, prefs.arabicDigits, new SwitchListener() {
-            @Override public void on(boolean b) { prefs.setArabicDigits(b); }
-        });
-
-        // ===== منتقي لون التمييز =====
-        layoutCard.addView(label(R.string.label_accent_color, 14, R.color.text_sub, false));
-        LinearLayout accentRow = new LinearLayout(this);
-        accentRow.setOrientation(LinearLayout.HORIZONTAL);
-        accentRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        // خيار "افتراضي الثيم"
         TextView auto = new TextView(this);
-        auto.setText(R.string.accent_auto);
-        auto.setTextSize(12);
-        auto.setPadding(dp(12), dp(7), dp(12), dp(7));
+        auto.setText("افتراضي الثيم");
+        auto.setTextSize(12.5f);
+        auto.setTypeface(prefs.accent == 0 ? UiKit.bold() : UiKit.medium());
+        auto.setPadding(dp(14), dp(8), dp(14), dp(8));
         auto.setClickable(true);
-        GradientDrawable autoBg = new GradientDrawable();
-        autoBg.setCornerRadius(dp(16));
-        autoBg.setColor(prefs.accent == 0 ? 0xFF243055 : 0x00000000);
-        autoBg.setStroke(dp(1), prefs.accent == 0 ? 0xFF7C4DFF : 0xFF3A4470);
-        auto.setBackground(autoBg);
-        auto.setTextColor(prefs.accent == 0 ? 0xFFB388FF : 0xFF9AA3D0);
+        auto.setBackground(UiKit.outlined(prefs.accent == 0 ? 0x337C5CFF : 0x00000000, 16,
+                prefs.accent == 0 ? UiKit.ACCENT : UiKit.FIELD_STROKE, 1.2f, this));
+        auto.setTextColor(prefs.accent == 0 ? UiKit.ACCENT_SOFT : UiKit.TEXT_SUB);
         auto.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 prefs.setAccent(0);
-                buildSections();
+                markStale(TAB_THEMES);
+                rebuildScreen(TAB_THEMES);
             }
         });
-        accentRow.addView(auto);
+        LinearLayout.LayoutParams aLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        aLp.setMargins(0, dp(10), 0, 0);
+        accentCard.addView(auto, aLp);
 
-        // دوائر الألوان الثمانية
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER_VERTICAL);
         for (int i = 1; i <= ThemeSet.ACCENT_COLORS.length; i++) {
             final int idx = i;
             View dot = new View(this);
             GradientDrawable g = new GradientDrawable();
             g.setShape(GradientDrawable.OVAL);
             g.setColor(ThemeSet.ACCENT_COLORS[i - 1]);
-            g.setStroke(prefs.accent == idx ? dp(2) : dp(1),
+            g.setStroke(prefs.accent == idx ? dp(3) : dp(1),
                     prefs.accent == idx ? 0xFFFFFFFF : 0x33000000);
             dot.setBackground(g);
             dot.setClickable(true);
             dot.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     prefs.setAccent(idx);
-                    buildSections();
+                    markStale(TAB_THEMES);
+                    rebuildScreen(TAB_THEMES);
                 }
             });
-            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(26), dp(26));
-            dlp.setMargins(dp(8), dp(8), dp(4), dp(4));
-            accentRow.addView(dot, dlp);
+            LinearLayout.LayoutParams dLp = new LinearLayout.LayoutParams(dp(34), dp(34));
+            dLp.setMargins(dp(2), dp(12), dp(10), dp(4));
+            dots.addView(dot, dLp);
         }
-        layoutCard.addView(accentRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        addCard(layoutCard);
-
-        // ===== القاموس الذكي =====
-        LinearLayout dictCard = card();
-        dictCard.addView(label(R.string.section_dict, 17, R.color.text_main, true));
-        dictCard.addView(label(R.string.dict_info, 13, R.color.text_sub, false));
-        tvDictCount = new TextView(this);
-        tvDictCount.setTextSize(14);
-        tvDictCount.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        tvDictCount.setTextColor(0xFFB388FF);
-        tvDictCount.setText(getString(R.string.dict_count, engine.learnedCount()));
-        LinearLayout.LayoutParams dcLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        dcLp.setMargins(0, dp(8), 0, 0);
-        dictCard.addView(tvDictCount, dcLp);
-        dictCard.addView(secondaryButton(R.string.btn_dict_reset, new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                engine.resetLearned();
-                tvDictCount.setText(getString(R.string.dict_count, 0));
-                Toast.makeText(MainActivity.this, R.string.dict_reset_done, Toast.LENGTH_SHORT).show();
-            }
-        }));
-        addCard(dictCard);
-
-        // ===== الاختصارات النصية =====
-        LinearLayout scCard = card();
-        scCard.addView(label(R.string.section_shortcuts, 17, R.color.text_main, true));
-        scCard.addView(label(R.string.shortcuts_info, 13, R.color.text_sub, false));
-        buildShortcutsList(scCard);
-        addCard(scCard);
-
-        // ===== النسخ الاحتياطي والاستعادة =====
-        LinearLayout bkCard = card();
-        bkCard.addView(label(R.string.section_backup, 17, R.color.text_main, true));
-        bkCard.addView(label(R.string.backup_info, 13, R.color.text_sub, false));
-        bkCard.addView(secondaryButton(R.string.btn_backup_export, new View.OnClickListener() {
-            @Override public void onClick(View v) { exportBackup(); }
-        }));
-        bkCard.addView(secondaryButton(R.string.btn_backup_import, new View.OnClickListener() {
-            @Override public void onClick(View v) { importBackupDialog(); }
-        }));
-        addCard(bkCard);
-
-        // ===== التجربة =====
-        LinearLayout tryCard = card();
-        tryCard.addView(label(R.string.card_try_title, 17, R.color.text_main, true));
-        EditText et = new EditText(this);
-        et.setHint(R.string.try_hint);
-        et.setTextColor(0xFFEDF0FF);
-        et.setHintTextColor(0xFF6B7398);
-        GradientDrawable etBg = new GradientDrawable();
-        etBg.setCornerRadius(dp(10));
-        etBg.setColor(0xFF0E1428);
-        etBg.setStroke(dp(1), 0xFF2A3562);
-        et.setBackground(etBg);
-        et.setPadding(dp(14), dp(12), dp(14), dp(12));
-        et.setMinLines(2);
-        LinearLayout.LayoutParams etLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        etLp.setMargins(0, dp(10), 0, 0);
-        tryCard.addView(et, etLp);
-        addCard(tryCard);
-
-        // ===== حول =====
-        LinearLayout aboutCard = card();
-        aboutCard.addView(label(R.string.about_title, 17, R.color.text_main, true));
-        aboutCard.addView(label(R.string.about_version, 14, 0xFFB388FF, true));
-        aboutCard.addView(label(R.string.about_body, 13, R.color.text_sub, false));
-        addCard(aboutCard);
-
-        // ===== نصائح =====
-        LinearLayout tips = new LinearLayout(this);
-        tips.setOrientation(LinearLayout.VERTICAL);
-        tips.setPadding(dp(22), dp(14), dp(22), dp(10));
-        tips.addView(label(R.string.footer_tips, 12, 0xFF6B7398, false));
-        addCard(tips);
+        accentCard.addView(dots);
+        addCard(page, accentCard, 8);
     }
 
-    // ==================== الاختصارات النصية ====================
+    // ==================== الشاشة ٣: الإعدادات ====================
 
-    private void buildShortcutsList(LinearLayout parent) {
+    private void buildSettings(LinearLayout page) {
+        pageSection(page, "⌨", "الكتابة الذكية");
+        LinearLayout typing = UiKit.card(this);
+        typing.addView(toggle("الاقتراحات الذكية", "شريط يعرض ٣ كلمات متوقعة أثناء الكتابة", prefs.suggest, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setSuggest(b); }
+        }));
+        typing.addView(toggle("التصحيح التلقائي", "تصحيح الكلمة عند الضغط على المسافة مع إمكانية التراجع", prefs.autoCorrect, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setAutoCorrect(b); }
+        }));
+        typing.addView(toggle("التنبؤ بالكلمة التالية", "يقترح الكلمة المرجحة بعد الكلمة الحالية", prefs.nextWord, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setNextWord(b); }
+        }));
+        typing.addView(toggle("الكتابة بالسحب", "مرّر إصبعك على الحروف ليكتب الكلمة كاملة", prefs.glide, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setGlide(b); }
+        }));
+        typing.addView(toggle("صف الأرقام", "صف أرقام ثابت فوق الحروف", prefs.numRow, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setNumRow(b); }
+        }));
+        typing.addView(toggle("الحرف الكبير تلقائياً", "أول حرف بعد نقطة أو سطر جديد يُكتب كبيراً", prefs.autoCap, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setAutoCap(b); }
+        }));
+        typing.addView(toggle("النقطة بضغطتين", "ضغطتان على المسافة تُدخلان نقطة", prefs.doubleSpace, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setDoubleSpace(b); }
+        }));
+        addCard(page, typing, 8);
+
+        pageSection(page, "📐", "التنسيق والمظهر");
+        LinearLayout layoutCard = UiKit.card(this);
+        layoutCard.addView(sectionLabel("حجم المفاتيح"));
+        layoutCard.addView(UiKit.segmented(this,
+                new String[]{"صغير", "متوسط", "كبير"}, prefs.keyHeight, new UiKit.IntListener() {
+                    @Override public void on(int i) { prefs.setKeyHeight(i); }
+                }));
+        layoutCard.addView(sectionLabel("وضع اليد الواحدة"));
+        layoutCard.addView(UiKit.segmented(this,
+                new String[]{"الوسط", "اليمين", "اليسار"}, prefs.oneHanded, new UiKit.IntListener() {
+                    @Override public void on(int i) { prefs.setOneHanded(i); }
+                }));
+        layoutCard.addView(sectionLabel("سرعة الضغط المطوّل"));
+        layoutCard.addView(UiKit.segmented(this,
+                new String[]{"سريع", "عادي", "بطيء"}, prefs.longPressIdx, new UiKit.IntListener() {
+                    @Override public void on(int i) { prefs.setLongPressIdx(i); }
+                }));
+        layoutCard.addView(toggle("الأرقام العربية في اللوحة الرقمية", "١٢٣ بدلاً من 123 في لوحة الأرقام", prefs.arabicDigits, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setArabicDigits(b); }
+        }));
+        layoutCard.addView(toggle("إدخال صوتي", "إملاء النص بالصوت بدل الكتابة", prefs.voice, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setVoice(b); }
+        }));
+        addCard(page, layoutCard, 8);
+
+        pageSection(page, "🔊", "الصوت واللمس");
+        LinearLayout soundCard = UiKit.card(this);
+        soundCard.addView(toggle("صوت النقر", "نقرات خفيفة عند الضغط على الأزرار", prefs.sound, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setSound(b); }
+        }));
+        soundCard.addView(toggle("الاهتزاز اللمسي", "استجابة لمسية عند كل ضغطة", prefs.haptics, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setHaptics(b); }
+        }));
+        soundCard.addView(sectionLabel("نمط الصوت"));
+        soundCard.addView(UiKit.segmented(this,
+                new String[]{"كلاسيكي", "رقمي", "ناعم"}, prefs.soundStyle, new UiKit.IntListener() {
+                    @Override public void on(int i) { prefs.setSoundStyle(i); }
+                }));
+        addCard(page, soundCard, 8);
+
+        pageSection(page, "🕶", "الخصوصية");
+        LinearLayout privCard = UiKit.card(this);
+        privCard.addView(toggle("الوضع التخفي", "إيقاف التعلّم والتقاط الحافظة وسجل الإيموجي مؤقتاً — درع في شريط اللوحة لتفعيله أثناء الكتابة", prefs.incognito, new UiKit.BoolListener() {
+            @Override public void on(boolean b) { prefs.setIncognito(b); }
+        }));
+        privCard.addView(UiKit.notice(this,
+                "بياناتك لا تغادر جهازك أبداً: القواميس مضمّنة داخل التطبيق والتعلّم محلي بالكامل.",
+                UiKit.FIELD_BG, UiKit.FIELD_STROKE, UiKit.TEXT_SUB));
+        addCard(page, privCard, 8);
+
+        pageSection(page, "📚", "القاموس الذكي");
+        LinearLayout dictCard = UiKit.card(this);
+        dictCard.addView(UiKit.body(this,
+                "اللوحة تتعلّم كلماتك محلياً وتقترحها أولاً في المرة القادمة."));
+        dictCountTv = UiKit.text(this, "كلمات تعلّمتها اللوحة: " + arabicNum(engine.learnedCount()),
+                14, UiKit.ACCENT_SOFT, true);
+        LinearLayout.LayoutParams dcLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dcLp.setMargins(0, dp(8), 0, 0);
+        dictCard.addView(dictCountTv, dcLp);
+        dictCard.addView(UiKit.secondaryButton(this, "تصفير القاموس المتعلّم", new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                engine.resetLearned();
+                if (dictCountTv != null)
+                    dictCountTv.setText("كلمات تعلّمتها اللوحة: " + arabicNum(0));
+                Toast.makeText(MainActivity.this, "تم تصفير القاموس", Toast.LENGTH_SHORT).show();
+            }
+        }));
+        addCard(page, dictCard, 8);
+
+        pageSection(page, "⚡", "الاختصارات النصية");
+        LinearLayout scCard = UiKit.card(this);
+        scCard.addView(UiKit.body(this,
+                "اكتب الاختصار ثم مسافة فيتوسّع تلقائياً إلى النص الكامل."));
+        shortcutsBox = UiKit.vstack(this);
+        scCard.addView(shortcutsBox);
+        fillShortcutsBox();
+        addCard(page, scCard, 8);
+
+        pageSection(page, "💾", "النسخ الاحتياطي والاستعادة");
+        LinearLayout bkCard = UiKit.card(this);
+        bkCard.addView(UiKit.body(this,
+                "صدّر كل إعداداتك وقاموسك واختصاراتك وحافظتك كنص واحد، واستعدها على أي جهاز."));
+        bkCard.addView(UiKit.primaryButton(this, "تصدير نسخة احتياطية", new View.OnClickListener() {
+            @Override public void onClick(View v) { exportBackup(); }
+        }));
+        bkCard.addView(UiKit.secondaryButton(this, "استعادة من نسخة", new View.OnClickListener() {
+            @Override public void onClick(View v) { importBackupDialog(); }
+        }));
+        addCard(page, bkCard, 8);
+    }
+
+    /** ترويسة قسم داخل شاشة الإعدادات */
+    private void pageSection(LinearLayout page, String glyph, String title) {
+        LinearLayout head = UiKit.hstack(this);
+        TextView g = UiKit.text(this, glyph, 15, UiKit.ACCENT_SOFT, true);
+        head.addView(g);
+        TextView t = UiKit.text(this, title, 16, UiKit.TEXT_MAIN, true);
+        LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tLp.setMargins(dp(10), 0, 0, 0);
+        head.addView(t, tLp);
+        LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hLp.setMargins(dp(16), dp(14), dp(16), 0);
+        page.addView(head, hLp);
+    }
+
+    private TextView sectionLabel(String s) {
+        return UiKit.text(this, s, 13, UiKit.TEXT_SUB, false);
+    }
+
+    /** صف مفتاح تبديل داخل بطاقة */
+    private LinearLayout toggle(String label, String sub, boolean checked, UiKit.BoolListener l) {
+        return UiKit.toggleRow(this, label, sub, checked, l);
+    }
+
+    /** تعبئة صندوق الاختصارات النصية */
+    private void fillShortcutsBox() {
+        if (shortcutsBox == null) return;
+        shortcutsBox.removeAllViews();
         ArrayList<String[]> list = engine.getShortcuts();
         if (list.isEmpty()) {
-            parent.addView(label(R.string.shortcuts_none, 13, R.color.text_sub, false));
+            shortcutsBox.addView(UiKit.text(this, "لا توجد اختصارات بعد — أضف أول اختصار بالأسفل.", 12.5f, UiKit.TEXT_FAINT, false));
         }
         for (final String[] s : list) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setCornerRadius(dp(9));
-            bg.setColor(0xFF0E1428);
-            bg.setStroke(dp(1), 0xFF2A3562);
-            row.setBackground(bg);
+            LinearLayout row = UiKit.hstack(this);
+            row.setBackground(UiKit.outlined(UiKit.FIELD_BG, 12, UiKit.FIELD_STROKE, 1, this));
             row.setPadding(dp(12), dp(9), dp(8), dp(9));
 
             TextView tv = new TextView(this);
             tv.setText(s[0] + "  ⤳  " + s[1]);
             tv.setTextSize(13);
-            tv.setTextColor(0xFFEDF0FF);
+            tv.setTextColor(UiKit.TEXT_MAIN);
             tv.setMaxLines(2);
             row.addView(tv, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -397,14 +851,15 @@ public class MainActivity extends Activity {
             TextView del = new TextView(this);
             del.setText("✕");
             del.setTextSize(14);
-            del.setTextColor(0xFFFF7B93);
+            del.setTypeface(UiKit.bold());
+            del.setTextColor(UiKit.RED);
             del.setPadding(dp(12), dp(4), dp(6), dp(4));
             del.setClickable(true);
             del.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     engine.removeShortcut(s[0]);
-                    Toast.makeText(MainActivity.this, R.string.shortcut_deleted, Toast.LENGTH_SHORT).show();
-                    buildSections();
+                    Toast.makeText(MainActivity.this, "حُذف الاختصار", Toast.LENGTH_SHORT).show();
+                    fillShortcutsBox();
                 }
             });
             row.addView(del, new LinearLayout.LayoutParams(
@@ -413,234 +868,120 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.setMargins(0, dp(8), 0, 0);
-            parent.addView(row, lp);
+            shortcutsBox.addView(row, lp);
         }
 
         // نموذج إضافة اختصار جديد
-        final EditText abIn = new EditText(this);
-        abIn.setHint(R.string.shortcut_abbr_hint);
-        final EditText expIn = new EditText(this);
-        expIn.setHint(R.string.shortcut_exp_hint);
-        for (EditText et : new EditText[]{abIn, expIn}) {
-            et.setTextColor(0xFFEDF0FF);
-            et.setHintTextColor(0xFF6B7398);
-            et.setTextSize(14);
-            GradientDrawable etBg = new GradientDrawable();
-            etBg.setCornerRadius(dp(10));
-            etBg.setColor(0xFF0E1428);
-            etBg.setStroke(dp(1), 0xFF2A3562);
-            et.setBackground(etBg);
-            et.setPadding(dp(12), dp(10), dp(12), dp(10));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, dp(8), 0, 0);
-            parent.addView(et, lp);
-        }
-        parent.addView(primaryButton(R.string.btn_shortcut_add, new View.OnClickListener() {
+        final EditText abIn = UiKit.field(this, "الاختصار (مثال: سلام)", 1);
+        final EditText expIn = UiKit.field(this, "التوسعة الكاملة (مثال: السلام عليكم ورحمة الله)", 1);
+        LinearLayout.LayoutParams fLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        fLp.setMargins(0, dp(8), 0, 0);
+        shortcutsBox.addView(abIn, fLp);
+        shortcutsBox.addView(expIn, fLp);
+        shortcutsBox.addView(UiKit.primaryButton(this, "إضافة الاختصار", new View.OnClickListener() {
             @Override public void onClick(View v) {
                 String ab = abIn.getText().toString().trim();
                 String ex = expIn.getText().toString().trim();
-                if (ab.isEmpty() || ex.isEmpty()) return;
-                engine.addShortcut(ab, ex);
-                Toast.makeText(MainActivity.this, R.string.shortcut_added, Toast.LENGTH_SHORT).show();
-                buildSections();
-            }
-        }));
-    }
-
-    // ==================== الفحص الذكي المتكامل ====================
-
-    /** بطاقة الفحص الذكي: ملخص سريع فوري + زر الفحص الشامل + صندوق النتائج */
-    private LinearLayout buildSelfTestCard() {
-        LinearLayout stCard = card();
-        stCard.addView(label(R.string.selftest_title, 17, R.color.text_main, true));
-        stCard.addView(label(R.string.selftest_info, 13, R.color.text_sub, false));
-
-        // فحص سريع فوري عند فتح الشاشة
-        TextView quick = new TextView(this);
-        quick.setTextSize(13);
-        quick.setLineSpacing(dp3(), 1f);
-        boolean crash = CrashGuard.hasReport();
-        if (crash) {
-            String s = CrashGuard.lastReportSummary();
-            quick.setText(getString(R.string.selftest_quick_crash)
-                    + (s == null ? "" : "\n" + s));
-            quick.setTextColor(0xFFFF7B6B);
-        } else if (isEnabledBySystem() && isSelected()) {
-            quick.setText(R.string.selftest_quick_ok);
-            quick.setTextColor(0xFF66D99A);
-        } else {
-            quick.setText(R.string.selftest_quick_pending);
-            quick.setTextColor(0xFFFFC93A);
-        }
-        LinearLayout.LayoutParams qLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        qLp.setMargins(0, dp(10), 0, 0);
-        stCard.addView(quick, qLp);
-
-        stResults = new LinearLayout(this);
-        stResults.setOrientation(LinearLayout.VERTICAL);
-        stCard.addView(stResults, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        stCard.addView(primaryButton(R.string.selftest_run, new View.OnClickListener() {
-            @Override public void onClick(View v) { runFullSelfTest(); }
-        }));
-        return stCard;
-    }
-
-    /** تشغيل الفحص الشامل في خيط خلفي ثم عرض النتائج */
-    private void runFullSelfTest() {
-        if (stResults == null) return;
-        stResults.removeAllViews();
-        TextView running = new TextView(this);
-        running.setText(R.string.selftest_running);
-        running.setTextSize(14);
-        running.setTextColor(0xFFFFC93A);
-        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rLp.setMargins(0, dp(12), 0, 0);
-        stResults.addView(running, rLp);
-
-        SelfTest.Report r0 = null;
-        try {
-            r0 = SelfTest.runAll(this);
-        } catch (Throwable t) {
-            CrashGuard.log(t);
-        }
-        final SelfTest.Report rep = r0;
-        stResults.removeAllViews();
-        if (rep == null) {
-            TextView fail = new TextView(this);
-            fail.setText(R.string.selftest_failed_run);
-            fail.setTextSize(14);
-            fail.setTextColor(0xFFFF7B6B);
-            stResults.addView(fail, rLp);
-            return;
-        }
-        showSelfTestResults(rep);
-    }
-
-    /** عرض نتائج الفحص: خلاصة ملونة + صف لكل فحص + سجل الأعطال + أزرار النسخ والمسح */
-    private void showSelfTestResults(final SelfTest.Report rep) {
-        // الخلاصة العامة
-        TextView sum = new TextView(this);
-        sum.setText(rep.summary);
-        sum.setTextSize(15);
-        sum.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        sum.setTextColor(rep.failed == 0 ? 0xFF66D99A : (rep.score >= 60 ? 0xFFFFC93A : 0xFFFF7B6B));
-        sum.setLineSpacing(dp3(), 1f);
-        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        sLp.setMargins(0, dp(12), 0, dp(4));
-        stResults.addView(sum, sLp);
-
-        // ملاحظة الإصلاح الذاتي إن حدث
-        if (rep.healed) {
-            TextView healed = new TextView(this);
-            healed.setText(R.string.selftest_healed);
-            healed.setTextSize(13);
-            healed.setTextColor(0xFF66D99A);
-            stResults.addView(healed, sLp);
-        }
-
-        // صفوف النتائج
-        for (final SelfTest.Result x : rep.results) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.TOP);
-
-            TextView mark = new TextView(this);
-            switch (x.status) {
-                case SelfTest.PASS: mark.setText("✔"); mark.setTextColor(0xFF66D99A); break;
-                case SelfTest.WARN: mark.setText("⚠"); mark.setTextColor(0xFFFFC93A); break;
-                case SelfTest.FAIL: mark.setText("✖"); mark.setTextColor(0xFFFF7B6B); break;
-                default: mark.setText("ℹ"); mark.setTextColor(0xFF8A93C4); break;
-            }
-            mark.setTextSize(15);
-            mark.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-            mark.setPadding(0, dp(2), dp(10), 0);
-            row.addView(mark, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-            LinearLayout col = new LinearLayout(this);
-            col.setOrientation(LinearLayout.VERTICAL);
-            TextView name = new TextView(this);
-            name.setText(x.name);
-            name.setTextSize(14);
-            name.setTextColor(0xFFEDF0FF);
-            name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-            TextView det = new TextView(this);
-            det.setText(x.detail);
-            det.setTextSize(12);
-            det.setTextColor(0xFF9AA3D0);
-            det.setLineSpacing(dp3(), 1f);
-            col.addView(name, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            col.addView(det, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            row.addView(col, new LinearLayout.LayoutParams(0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            rowLp.setMargins(0, dp(10), 0, 0);
-            stResults.addView(row, rowLp);
-        }
-
-        // صندوق آخر عطل مسجل + زر المسح
-        if (CrashGuard.hasReport()) {
-            TextView cr = new TextView(this);
-            String s = CrashGuard.lastReportSummary();
-            cr.setText(getString(R.string.selftest_last_crash) + "\n" + (s == null ? "—" : s));
-            cr.setTextSize(12);
-            cr.setTextColor(0xFFFF7B6B);
-            GradientDrawable crBg = new GradientDrawable();
-            crBg.setCornerRadius(dp(9));
-            crBg.setColor(0xFF1A0E12);
-            crBg.setStroke(dp(1), 0xFF5A2430);
-            cr.setBackground(crBg);
-            cr.setPadding(dp(12), dp(10), dp(12), dp(10));
-            LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            cLp.setMargins(0, dp(14), 0, 0);
-            stResults.addView(cr, cLp);
-
-            stResults.addView(secondaryButton(R.string.selftest_clear, new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    CrashGuard.clearReport();
-                    Toast.makeText(MainActivity.this, R.string.selftest_cleared, Toast.LENGTH_SHORT).show();
-                    buildSections();
+                if (ab.isEmpty() || ex.isEmpty()) {
+                    Toast.makeText(MainActivity.this, "املأ الحقلين أولاً", Toast.LENGTH_SHORT).show();
+                    return;
                 }
-            }));
-        }
-
-        // زر نسخ التقرير
-        stResults.addView(secondaryButton(R.string.selftest_copy, new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                try {
-                    ClipboardManager cm = (ClipboardManager)
-                            getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (cm != null) {
-                        cm.setPrimaryClip(ClipData.newPlainText("DRS-SelfTest",
-                                SelfTest.buildReport(rep)));
-                    }
-                    Toast.makeText(MainActivity.this, R.string.selftest_copied, Toast.LENGTH_SHORT).show();
-                } catch (Exception ignored) {}
+                engine.addShortcut(ab, ex);
+                Toast.makeText(MainActivity.this, "أُضيف الاختصار", Toast.LENGTH_SHORT).show();
+                fillShortcutsBox();
             }
         }));
+    }
+
+    // ==================== الشاشة ٥: حول ====================
+
+    private void buildAbout(LinearLayout page) {
+        LinearLayout hero = UiKit.vstack(this);
+        hero.setGravity(Gravity.CENTER);
+        hero.setBackground(UiKit.heroGradient(this));
+        hero.setPadding(dp(20), dp(28), dp(20), dp(24));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams lgLp = new LinearLayout.LayoutParams(dp(76), dp(76));
+        lgLp.gravity = Gravity.CENTER_HORIZONTAL;
+        hero.addView(logo, lgLp);
+
+        TextView name = UiKit.text(this, "DRS Smart Keyboard", 21, 0xFFFFFFFF, true);
+        name.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams nLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        nLp.setMargins(0, dp(12), 0, 0);
+        hero.addView(name, nLp);
+
+        TextView vers = UiKit.text(this,
+                "الإصدار " + BuildInfo.VERSION_NAME + " (" + BuildInfo.VERSION_CODE + ") — لوحة مفاتيح عربية متكاملة",
+                13, 0xFFC6CDF2, false);
+        vers.setGravity(Gravity.CENTER);
+        hero.addView(vers);
+        addCard(page, hero, 14);
+
+        LinearLayout guide = UiKit.card(this);
+        guide.addView(UiKit.title(this, "دليل سريع"));
+        guide.addView(guideRow("⌨", "ست لغات كاملة: العربية وEnglish وFrançais وDeutsch وEspañol وTürkçe — زر التبديل في الصف الثالث"));
+        guide.addView(guideRow("👆", "اضغط مطولاً على أي حرف لبدائله وحركات التشكيل"));
+        glideGuide(guide);
+        guide.addView(guideRow("📋", "زر «تحرير» يفتح لوحة المؤشر والحافظة والنسخ واللصق"));
+        guide.addView(guideRow("🎨", "غيّر الثيم ولون التمييز من تبويب الثيمات — يطبّق فوراً"));
+        guide.addView(guideRow("🛡", "الفحص الذكي يفحص ١٤ مكوناً ويصلح الإعدادات التالفة ذاتياً"));
+        addCard(page, guide, 8);
+
+        LinearLayout info = UiKit.card(this);
+        info.addView(UiKit.title(this, "معلومات"));
+        info.addView(UiKit.body(this,
+        "تطبيق مفتوح المصدر بلا إعلانات ولا أذونات شبكة: كل شيء يعمل محلياً على جهازك. " +
+        "تشمل المميزات: تنبؤ وتصحيح ذكي بقاموسين مضمّنين، كتابة بالسحب، اختصارات نصية، مدير حافظة، " +
+        "وضع عائم، وضع تخفي، إدخال صوتي، ١٦ ثيماً نهارية وليلية، ونسخ احتياطي كامل."));
+        info.addView(UiKit.notice(this,
+        "المطوّر: DRS — مبني بأدوات مفتوحة، بدون Gradle، برخصة مفتوحة.",
+        UiKit.FIELD_BG, UiKit.FIELD_STROKE, UiKit.TEXT_SUB));
+        addCard(page, info, 8);
+
+        LinearLayout tips = UiKit.card(this);
+        tips.addView(UiKit.caption(this,
+        "نصيحة: إذا غيّرت أي إعداد ولم يظهر أثره فأعد فتح أي حقل كتابة لإعادة بناء اللوحة. " +
+        "لأي مشكلة شغّل الفحص الذكي — يخبرك بالضبط ما الخلل وكيف يُصلح."));
+        addCard(page, tips, 8);
+    }
+
+    private void glideGuide(LinearLayout guide) {
+        guide.addView(guideRow("✍", "الكتابة بالسحب: مرّر إصبعك فوق حروف الكلمة دفعة واحدة"));
+    }
+
+    private LinearLayout guideRow(String glyph, String txt) {
+        LinearLayout row = UiKit.hstack(this);
+        row.setGravity(Gravity.TOP);
+        TextView g = UiKit.text(this, glyph, 13, UiKit.ACCENT_SOFT, true);
+        row.addView(g);
+        TextView t = UiKit.text(this, txt, 13, UiKit.TEXT_SUB, false);
+        LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tLp.setMargins(dp(10), 0, 0, 0);
+        row.addView(t, tLp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(10), 0, 0);
+        row.setLayoutParams(lp);
+        return row;
     }
 
     // ==================== النسخ الاحتياطي ====================
 
-    /** تصدير كل البيانات (إعدادات + قاموس + اختصارات + حافظة) كنص JSON */
+    /** تصدير كل البيانات كنص JSON للحافظة والمشاركة */
     private void exportBackup() {
         try {
             android.content.SharedPreferences panelSp =
                     getSharedPreferences("kb_panel", Context.MODE_PRIVATE);
             JSONObject o = new JSONObject();
             o.put("app", "DRS-Smart-Keyboard");
-            o.put("v", 22);
+            o.put("v", 25);
             o.put("theme", prefs.themePreset);
             o.put("sound", prefs.sound);
             o.put("haptics", prefs.haptics);
@@ -666,39 +1007,23 @@ public class MainActivity extends Activity {
             o.put("pins", panelSp.getString("pins", ""));
             o.put("emoji", panelSp.getString("emoji_recents", ""));
             String json = o.toString();
-            // نسخ إلى الحافظة
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (cm != null) {
-                cm.setPrimaryClip(ClipData.newPlainText("DRS-Backup", json));
-            }
-            // مشاركة مباشرة أيضاً
+            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("DRS-Backup", json));
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
             send.putExtra(Intent.EXTRA_TEXT, json);
             try {
-                startActivity(Intent.createChooser(send, getString(R.string.btn_backup_export)));
+                startActivity(Intent.createChooser(send, "تصدير النسخة الاحتياطية"));
             } catch (Exception ignored) {}
-            Toast.makeText(this, R.string.backup_exported, Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "صُدّرت النسخة الاحتياطية إلى الحافظة والمشاركة", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
-            Toast.makeText(this, R.string.backup_import_bad, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "تعذّر التصدير", Toast.LENGTH_SHORT).show();
         }
     }
 
-    /** نافذة استيراد: لصق النص JSON واستعادته */
+    /** نافذة استيراد النسخة الاحتياطية */
     private void importBackupDialog() {
-        final EditText in = new EditText(this);
-        in.setHint(R.string.backup_import_hint);
-        in.setTextColor(0xFFEDF0FF);
-        in.setHintTextColor(0xFF6B7398);
-        in.setTextSize(12);
-        in.setMinLines(4);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(10));
-        bg.setColor(0xFF0E1428);
-        bg.setStroke(dp(1), 0xFF2A3562);
-        in.setBackground(bg);
-        in.setPadding(dp(12), dp(10), dp(12), dp(10));
-        // لصق تلقائي من الحافظة إن كانت تبدأ كنسخة احتياطية
+        final EditText in = UiKit.field(this, "الصق نص النسخة الاحتياطية هنا", 4);
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0) {
@@ -710,9 +1035,9 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
 
         new AlertDialog.Builder(this)
-                .setTitle(R.string.backup_import_title)
+                .setTitle("استعادة نسخة احتياطية")
                 .setView(in)
-                .setPositiveButton(R.string.btn_backup_import, new DialogInterface.OnClickListener() {
+                .setPositiveButton("استعادة", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         applyBackup(in.getText().toString());
                     }
@@ -752,118 +1077,54 @@ public class MainActivity extends Activity {
             pe.putString("pins", o.optString("pins", ""));
             pe.putString("emoji_recents", o.optString("emoji", ""));
             pe.apply();
-            Toast.makeText(this, R.string.backup_import_ok, Toast.LENGTH_LONG).show();
-            buildSections();
+            Toast.makeText(this, "استُعدت كل البيانات بنجاح", Toast.LENGTH_LONG).show();
+            for (int i = 0; i < TAB_COUNT; i++) markStale(i);
+            rebuildScreen(currentTab);
+            stale[currentTab] = false;
         } catch (Exception e) {
-            Toast.makeText(this, R.string.backup_import_bad, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "نص النسخة الاحتياطية غير صالح", Toast.LENGTH_SHORT).show();
         }
     }
 
-    // ==================== أدوات بناء الواجهة ====================
-
-    private interface SwitchListener { void on(boolean b); }
-    private interface IntListener { void on(int i); }
-
-    private LinearLayout card() {
-        LinearLayout c = new LinearLayout(this);
-        c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(18), dp(18), dp(18), dp(18));
-        c.setBackgroundResource(R.drawable.bg_card);
-        return c;
-    }
-
-    private void addCard(LinearLayout card) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dp(16), dp(8), dp(16), dp(8));
-        sections.addView(card, lp);
-    }
-
-    private TextView label(int textRes, int sp, int colorRes, boolean bold) {
-        TextView tv = new TextView(this);
-        tv.setText(textRes);
-        tv.setTextSize(sp);
-        int color = colorRes;
-        try {
-            color = getResources().getColor(colorRes);
-        } catch (Exception ignored) {
-            // لون صريح ممرر مباشرة (0xFF...)
-        }
-        tv.setTextColor(color);
-        if (bold) tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        tv.setLineSpacing(dp3(), 1f);
-        return tv;
-    }
-
-    private void addSwitch(LinearLayout parent, int labelRes, boolean checked,
-                           final SwitchListener listener) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView tv = label(labelRes, 14, R.color.text_main, false);
-        row.addView(tv, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Switch sw = new Switch(this);
-        sw.setChecked(checked);
-        sw.setOnCheckedChangeListener((b, isChecked) -> listener.on(isChecked));
-        row.addView(sw, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(10), 0, 0);
-        parent.addView(row, lp);
-    }
-
-    private View radioRow(String[] labels, int checkedIdx, final IntListener listener) {
-        RadioGroup rg = new RadioGroup(this);
-        rg.setOrientation(labels.length == 3 ? RadioGroup.HORIZONTAL : RadioGroup.VERTICAL);
-        for (int i = 0; i < labels.length; i++) {
-            RadioButton rb = new RadioButton(this);
-            rb.setText(labels[i]);
-            rb.setTextSize(14);
-            rb.setTextColor(0xFFEDF0FF);
-            rb.setId(i + 1);
-            rg.addView(rb);
-            if (i == checkedIdx) rb.setChecked(true);
-        }
-        rg.setOnCheckedChangeListener((group, checkedId) -> listener.on(checkedId - 1));
-        return rg;
-    }
-
-    private Button primaryButton(int textRes, View.OnClickListener listener) {
-        Button b = baseButton(textRes, listener);
-        b.setBackgroundResource(R.drawable.btn_primary);
-        b.setTextColor(0xFFFFFFFF);
-        return b;
-    }
-
-    private Button secondaryButton(int textRes, View.OnClickListener listener) {
-        Button b = baseButton(textRes, listener);
-        b.setBackgroundResource(R.drawable.btn_secondary);
-        b.setTextColor(0xFFB388FF);
-        return b;
-    }
-
-    private Button baseButton(int textRes, View.OnClickListener listener) {
-        Button b = new Button(this);
-        b.setText(textRes);
-        b.setTextSize(15);
-        b.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        b.setAllCaps(false);
-        b.setStateListAnimator(null);
-        b.setOnClickListener(listener);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
-        lp.setMargins(0, dp(14), 0, 0);
-        b.setLayoutParams(lp);
-        return b;
-    }
+    // ==================== أدوات مساعدة ====================
 
     private int dp(float v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private float dp3() { return dp(3); }
+    /** يضيف بطاقة (أو أي عرض) إلى الصفحة بهوامش موحدة */
+    private void addCard(LinearLayout page, View card, int topMarginDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(8), dp(topMarginDp), dp(8), dp(4));
+        page.addView(card, lp);
+    }
+
+    /** يلفّ حاوية داخلية ببطاقة جاهزة */
+    private LinearLayout wrapCard(LinearLayout inner) {
+        LinearLayout card = UiKit.card(this);
+        card.addView(inner, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return card;
+    }
+
+    /** تحويل رقم إلى أرقام عربية للعرض */
+    private String arabicNum(int n) {
+        String s = String.valueOf(n);
+        StringBuilder b = new StringBuilder();
+        for (char ch : s.toCharArray()) {
+            if (ch >= '0' && ch <= '9') b.append((char) ('٠' + (ch - '0')));
+            else b.append(ch);
+        }
+        return b.toString();
+    }
+
+    private int countEmojis() {
+        int total = 0;
+        for (int g = 1; g < Layouts.EMOJI_GROUPS.length; g++)
+            total += Layouts.emojisOf(g).length;
+        return total;
+    }
 
     // ==================== الحالة ====================
 
@@ -885,17 +1146,99 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (prefs != null) prefs.reload();
-        boolean enabled = isEnabledBySystem();
-        boolean selected = isSelected();
-        if (selected) {
-            tvStatus.setText(R.string.status_ready);
-            tvStatus.setTextColor(0xFF66D99A);
-        } else if (enabled) {
-            tvStatus.setText(R.string.status_enabled_not_selected);
-            tvStatus.setTextColor(0xFFFFC93A);
-        } else {
-            tvStatus.setText(R.string.status_disabled);
-            tvStatus.setTextColor(0xFF9AA3D0);
+        fillStatusBox();
+    }
+
+    // ==================== أيقونات شريط التنقل ====================
+
+    /** أيقونة مرسومة بالكامل عبر Canvas لكل تبويب */
+    private class TabIcon extends View {
+        private final int type;
+        private boolean active;
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+
+        TabIcon(Context c, int type) {
+            super(c);
+            this.type = type;
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(dp(1.8f));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeJoin(Paint.Join.ROUND);
+            setActive(type == TAB_HOME);
+        }
+
+        void setActive(boolean on) {
+            active = on;
+            p.setColor(on ? UiKit.ACCENT_SOFT : UiKit.TEXT_FAINT);
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float w = getWidth(), h = getHeight();
+            float cx = w / 2f, cy = h / 2f;
+            path.reset();
+            switch (type) {
+                case TAB_HOME: {
+                    // بيت: سقف + جسم
+                    path.moveTo(cx - w * 0.32f, cy + h * 0.05f);
+                    path.lineTo(cx, cy - h * 0.34f);
+                    path.lineTo(cx + w * 0.32f, cy + h * 0.05f);
+                    canvas.drawPath(path, p);
+                    path.reset();
+                    path.moveTo(cx - w * 0.22f, cy);
+                    path.lineTo(cx - w * 0.22f, cy + h * 0.34f);
+                    path.lineTo(cx + w * 0.22f, cy + h * 0.34f);
+                    path.lineTo(cx + w * 0.22f, cy);
+                    canvas.drawPath(path, p);
+                    break;
+                }
+                case TAB_THEMES: {
+                    // لوحة ألوان: مربعات ٢×٢
+                    float s = w * 0.26f, gap = w * 0.10f;
+                    p.setStyle(Paint.Style.FILL);
+                    canvas.drawRoundRect(cx - s - gap, cy - s - gap, cx - gap, cy - gap, dp(3), dp(3), p);
+                    canvas.drawRoundRect(cx + gap, cy - s - gap, cx + gap + s, cy - gap, dp(3), dp(3), p);
+                    p.setStyle(Paint.Style.STROKE);
+                    canvas.drawRoundRect(cx - s - gap, cy + gap, cx - gap, cy + gap + s, dp(3), dp(3), p);
+                    canvas.drawRoundRect(cx + gap, cy + gap, cx + gap + s, cy + gap + s, dp(3), dp(3), p);
+                    break;
+                }
+                case TAB_SETTINGS: {
+                    // منزلقات: ثلاثة خطوط بمقابض
+                    for (int i = -1; i <= 1; i++) {
+                        float y = cy + i * h * 0.28f;
+                        canvas.drawLine(cx - w * 0.34f, y, cx + w * 0.34f, y, p);
+                        p.setStyle(Paint.Style.FILL);
+                        canvas.drawCircle(cx + i * w * 0.18f, y, dp(2.6f), p);
+                        p.setStyle(Paint.Style.STROKE);
+                    }
+                    break;
+                }
+                case TAB_DIAG: {
+                    // درع
+                    path.moveTo(cx, cy - h * 0.38f);
+                    path.lineTo(cx + w * 0.32f, cy - h * 0.18f);
+                    path.lineTo(cx + w * 0.30f, cy + h * 0.12f);
+                    path.quadTo(cx + w * 0.20f, cy + h * 0.38f, cx, cy + h * 0.44f);
+                    path.quadTo(cx - w * 0.20f, cy + h * 0.38f, cx - w * 0.30f, cy + h * 0.12f);
+                    path.lineTo(cx - w * 0.32f, cy - h * 0.18f);
+                    path.close();
+                    canvas.drawPath(path, p);
+                    break;
+                }
+                default: {
+                    // معلومات: دائرة + i
+                    canvas.drawCircle(cx, cy, w * 0.36f, p);
+                    p.setStyle(Paint.Style.FILL);
+                    canvas.drawCircle(cx, cy - h * 0.14f, dp(1.6f), p);
+                    canvas.drawRect(cx - dp(1.2f), cy - dp(1), cx + dp(1.2f), cy + h * 0.20f, p);
+                    p.setStyle(Paint.Style.STROKE);
+                    break;
+                }
+            }
         }
     }
 }

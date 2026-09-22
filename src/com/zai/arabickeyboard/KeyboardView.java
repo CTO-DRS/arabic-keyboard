@@ -139,8 +139,8 @@ public class KeyboardView extends View {
         radius = dp(9);
         stripH = dp(40);
 
-        textPaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        hintPaint.setTypeface(Typeface.DEFAULT);
+        textPaint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        hintPaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         hintPaint.setTextAlign(Paint.Align.RIGHT);
 
         if (theme == null) theme = ThemeSet.resolve(ThemeSet.DEFAULT_PRESET, false);
@@ -553,7 +553,7 @@ public class KeyboardView extends View {
                 return;
             case Key.CODE_ENTER:
                 if (enterLabel != null) {
-                    drawTextFitted(canvas, enterLabel, cx, cy, lk.r.width() * 0.8f, keyH * 0.24f, textColorFor(k));
+                    drawTextFitted(canvas, enterLabel, cx, cy, lk.r.width() * 0.8f, keyH * 0.28f, textColorFor(k));
                 } else {
                     drawEnterIcon(canvas, cx, cy, lk.r.width(), lk.r.height());
                 }
@@ -565,14 +565,14 @@ public class KeyboardView extends View {
                 drawMicIcon(canvas, cx, cy, lk.r.width(), lk.r.height());
                 return;
             case Key.CODE_LANG:
-                drawTextFitted(canvas, k.label, cx, cy, lk.r.width() * 0.8f, keyH * 0.26f, textColorFor(k));
+                drawTextFitted(canvas, k.label, cx, cy, lk.r.width() * 0.8f, keyH * 0.30f, textColorFor(k));
                 return;
         }
 
         if (k.type == Key.SPACE) {
             if (k.label != null && k.label.length() > 0) {
                 hintPaint.setColor(theme.hintText);
-                hintPaint.setTextSize(keyH * 0.20f);
+                hintPaint.setTextSize(keyH * 0.22f);
                 hintPaint.setTextAlign(Paint.Align.CENTER);
                 canvas.drawText(k.label, cx, cy - (hintPaint.ascent() + hintPaint.descent()) / 2f, hintPaint);
                 hintPaint.setTextAlign(Paint.Align.RIGHT);
@@ -580,7 +580,7 @@ public class KeyboardView extends View {
             return;
         }
 
-        // أزرار الحروف والرموز
+        // أزرار الحروف والرموز — خط أكبر وأوضح (v2.5)
         String label;
         boolean showShift;
         if (shifted && k.shiftLabel != null) {
@@ -592,16 +592,19 @@ public class KeyboardView extends View {
         }
         if (label == null) return;
 
-        drawTextFitted(canvas, label, cx, cy, lk.r.width() * 0.82f, keyH * 0.36f, textColorFor(k));
+        drawTextFitted(canvas, label, cx, cy, lk.r.width() * 0.84f, keyH * 0.47f, textColorFor(k));
 
-        // تلميح صغير أعلى اليمين عند وجود Shift مختلف أو بدائل
+        // تلميح صغير أعلى اليمين — للأرقام والرموز فقط حتى لا تتكدس العلامات على الحروف (v2.5)
         String hint = null;
         if (!showShift && k.shiftLabel != null && !k.shiftLabel.equals(k.label)) hint = k.shiftLabel;
         else if (!showShift && k.alts != null && !k.alts.isEmpty()) hint = k.alts.get(0);
-        if (hint != null && hint.length() == 1) {
+        boolean baseIsLetter = !label.isEmpty() && Character.isLetter(label.charAt(0));
+        if (hint != null && hint.length() == 1 && !baseIsLetter) {
             hintPaint.setColor(theme.hintText);
-            hintPaint.setTextSize(keyH * 0.17f);
-            canvas.drawText(hint, lk.r.right - dp(5), lk.r.top + dp(12), hintPaint);
+            hintPaint.setTextAlign(Paint.Align.RIGHT);
+            float hs = keyH * 0.18f;
+            hintPaint.setTextSize(hs);
+            canvas.drawText(hint, lk.r.right - dp(6), lk.r.top + dp(5) + hs, hintPaint);
         }
     }
 
