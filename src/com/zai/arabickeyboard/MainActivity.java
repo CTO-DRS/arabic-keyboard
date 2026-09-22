@@ -20,6 +20,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
+import android.view.animation.AnimationSet;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.TranslateAnimation;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -38,7 +41,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * التطبيق الرئيسي — DRS Smart Keyboard v2.6
+ * التطبيق الرئيسي — DRS Smart Keyboard v2.7
  * تطبيق متعدد الشاشات بتصميم عصري موحد وخمسة أقسام:
  *   الرئيسية (حالة + اختصارات سريعة + تجربة) — الثيمات — الإعدادات — الفحص الذكي — حول
  * تنقّل سفلي بأيقونات مرسومة، انتقالات ناعمة، وهوية بصرية متكاملة.
@@ -90,29 +93,38 @@ public class MainActivity extends Activity {
     // ==================== الهيكل العام ====================
 
     private void buildRoot() {
+        // الطبقة الصفرية: خلفية Aurora زجاجية (تظهر شفافية البطاقات عبرها)
+        FrameLayout rootFrame = new FrameLayout(this);
+        rootFrame.addView(new AuroraBg(this), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(UiKit.PAGE_BG);
+        rootFrame.addView(root, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // ===== الشريط العلوي — بطاقة عصرية بحواف دائرية وشعار مرسوم =====
+        // ===== الشريط العلوي — بطاقة زجاجية بحد مضيء وشعار متوهج =====
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        GradientDrawable hbg = new GradientDrawable();
-        hbg.setOrientation(GradientDrawable.Orientation.TL_BR);
-        hbg.setColors(new int[]{UiKit.HERO_START, UiKit.HERO_MID, UiKit.HERO_END});
-        hbg.setCornerRadius(dp(24));
-        hbg.setStroke(dp(1), 0x2EFFFFFF);
-        header.setBackground(hbg);
+        header.setBackground(UiKit.glass(this, 28));
         header.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        // شعار مرسوم: أيقونة لوحة مفاتيح داخل مربع متدرج
+        // شعار متوهج: هالة شعاعية + مربع متدرج + أيقونة لوحة مفاتيح مرسومة
         FrameLayout logoWrap = new FrameLayout(this);
-        logoWrap.setBackground(UiKit.accentGradient(this, 14));
-        Icon logoIc = new Icon(this, Icon.KEYBOARD, 0xFFFFFFFF);
-        logoWrap.addView(logoIc, new FrameLayout.LayoutParams(
-                dp(24), dp(24), Gravity.CENTER));
-        header.addView(logoWrap, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        View glow = new View(this);
+        GradientDrawable gg = new GradientDrawable();
+        gg.setShape(GradientDrawable.OVAL);
+        gg.setGradientType(GradientDrawable.RADIAL_GRADIENT);
+        gg.setColors(new int[]{0x808A63FF, 0x208A63FF, 0x00000000});
+        gg.setGradientRadius(dp(34));
+        glow.setBackground(gg);
+        logoWrap.addView(glow, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        FrameLayout squircle = UiKit.iconBadge(this, Icon.KEYBOARD, 46, 25);
+        logoWrap.addView(squircle, new FrameLayout.LayoutParams(
+                dp(46), dp(46), Gravity.CENTER));
+        header.addView(logoWrap, new LinearLayout.LayoutParams(dp(50), dp(50)));
 
         LinearLayout hCol = UiKit.vstack(this);
         TextView hTitle = new TextView(this);
@@ -139,22 +151,22 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hLp.setMargins(dp(10), dp(10), dp(10), dp(2));
         root.addView(header, hLp);
-
         // ===== محتوى الشاشات =====
         content = new FrameLayout(this);
         LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         root.addView(content, cLp);
 
-        // ===== شريط التنقل السفلي — قرص عائم بحواف دائرية ناعمة =====
+        // ===== شريط التنقل السفلي — قرص زجاجي عائم بحد مضيء =====
         FrameLayout navWrap = new FrameLayout(this);
         navWrap.setPadding(dp(10), dp(6), dp(10), dp(10));
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         GradientDrawable nbg = new GradientDrawable();
-        nbg.setColor(UiKit.NAV_BG);
-        nbg.setCornerRadius(dp(26));
-        nbg.setStroke(dp(1), 0x3D1F2A4D);
+        nbg.setOrientation(GradientDrawable.Orientation.TL_BR);
+        nbg.setColors(new int[]{0xD9182042, 0xA80D1329});
+        nbg.setCornerRadius(dp(28));
+        nbg.setStroke(dp(1), 0x3CFFFFFF);
         nav.setBackground(nbg);
         nav.setPadding(dp(6), dp(7), dp(6), dp(7));
         for (int i = 0; i < TAB_COUNT; i++) {
@@ -168,7 +180,7 @@ public class MainActivity extends Activity {
         root.addView(navWrap, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        setContentView(root);
+        setContentView(rootFrame);
         for (int i = 0; i < TAB_COUNT; i++) {
             screens[i] = buildScreen(i);
             content.addView(screens[i], new FrameLayout.LayoutParams(
@@ -187,6 +199,7 @@ public class MainActivity extends Activity {
 
         Icon icon = new Icon(this, TAB_ICONS[index], UiKit.TEXT_FAINT);
         item.addView(icon, new LinearLayout.LayoutParams(dp(23), dp(23)));
+        UiKit.pressScale(item, 0.92f);
 
         TextView label = new TextView(this);
         label.setText(TAB_LABELS[index]);
@@ -210,15 +223,20 @@ public class MainActivity extends Activity {
         for (int i = 0; i < TAB_COUNT; i++) {
             LinearLayout item = navItems[i];
             boolean on = i == active;
-            // قرص نشط بحواف دائرية ولمسة لون التمييز
+            // كبسولة زجاجية متوهجة للتبويب النشط
             GradientDrawable ib = new GradientDrawable();
-            ib.setCornerRadius(dp(19));
-            ib.setColor(on ? 0x267C5CFF : 0x00000000);
-            if (on) ib.setStroke(dp(1), 0x407C5CFF);
+            ib.setOrientation(GradientDrawable.Orientation.TL_BR);
+            if (on) {
+                ib.setColors(new int[]{0x527C5CFF, 0x2E5B3FE0});
+                ib.setStroke(dp(1), 0x669D7BFF);
+            } else {
+                ib.setColors(new int[]{0x00000000, 0x00000000});
+            }
+            ib.setCornerRadius(dp(21));
             item.setBackground(ib);
             TextView label = (TextView) item.getTag();
-            label.setTextColor(on ? UiKit.ACCENT_SOFT : UiKit.TEXT_FAINT);
-            ((Icon) item.getChildAt(0)).setActive(on, UiKit.ACCENT_SOFT, UiKit.TEXT_FAINT);
+            label.setTextColor(on ? 0xFFD4C6FF : UiKit.TEXT_FAINT);
+            ((Icon) item.getChildAt(0)).setActive(on, 0xFFD4C6FF, UiKit.TEXT_FAINT);
         }
     }
 
@@ -231,9 +249,17 @@ public class MainActivity extends Activity {
         for (int i = 0; i < TAB_COUNT; i++) {
             screens[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
         }
-        Animation fade = new AlphaAnimation(0.55f, 1f);
-        fade.setDuration(180);
-        screens[index].startAnimation(fade);
+        // انتقال ناعم: تلاشٍ + انزلاق خفيف للأعلى
+        AnimationSet st = new AnimationSet(true);
+        AlphaAnimation a = new AlphaAnimation(0.35f, 1f);
+        TranslateAnimation tr = new TranslateAnimation(
+                Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 0f,
+                Animation.RELATIVE_TO_SELF, 0.018f, Animation.RELATIVE_TO_SELF, 0f);
+        st.addAnimation(a);
+        st.addAnimation(tr);
+        st.setDuration(230);
+        st.setInterpolator(new DecelerateInterpolator(1.5f));
+        screens[index].startAnimation(st);
         if (index == TAB_DIAG && !diagEverRun) runDiag();
     }
 
@@ -248,11 +274,11 @@ public class MainActivity extends Activity {
         stale[index] = false;
     }
 
-    /** بناء شاشة رقم i */
+    /** بناء شاشة رقم i — شفافة لتظهر خلفية Aurora عبر البطاقات الزجاجية */
     private ScrollView buildScreen(int index) {
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
-        sv.setBackgroundColor(UiKit.PAGE_BG);
+        sv.setBackgroundColor(0x00000000);
         sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout page = UiKit.vstack(this);
         int padTop = index == TAB_HOME ? dp(2) : dp(6);
@@ -421,10 +447,11 @@ public class MainActivity extends Activity {
     private LinearLayout statTile(String value, String label) {
         LinearLayout t = UiKit.vstack(this);
         t.setGravity(Gravity.CENTER);
-        t.setBackground(UiKit.outlined(UiKit.TILE_BG, 16, UiKit.CARD_STROKE, 1, this));
-        t.setPadding(dp(6), dp(14), dp(6), dp(14));
-        TextView v = UiKit.text(this, value, 20, UiKit.ACCENT_SOFT, true);
+        t.setBackground(UiKit.glass(this, 22));
+        t.setPadding(dp(6), dp(15), dp(6), dp(15));
+        TextView v = UiKit.text(this, value, 23, 0xFFD4C6FF, true);
         v.setGravity(Gravity.CENTER);
+        UiKit.glowText(v, 0x998A63FF, 7, this); // توهج بنفسجي ناعم حول الرقم
         t.addView(v);
         TextView l = UiKit.text(this, label, 11, UiKit.TEXT_SUB, false);
         l.setGravity(Gravity.CENTER);
@@ -596,8 +623,17 @@ public class MainActivity extends Activity {
             cell.setGravity(Gravity.CENTER);
             cell.setPadding(dp(10), dp(12), dp(10), dp(12));
             cell.setClickable(true);
-            cell.setBackground(UiKit.outlined(sel ? 0x337C5CFF : UiKit.TILE_BG,
-                    18, sel ? UiKit.ACCENT : UiKit.CARD_STROKE, sel ? 1.6f : 1, this));
+            if (sel) {
+                GradientDrawable selBg = new GradientDrawable();
+                selBg.setOrientation(GradientDrawable.Orientation.TL_BR);
+                selBg.setColors(new int[]{0x477C5CFF, 0x2E5B3FE0});
+                selBg.setCornerRadius(dp(20));
+                selBg.setStroke(dp(1.4f), 0x8A9D7BFF);
+                cell.setBackground(selBg);
+            } else {
+                cell.setBackground(UiKit.glass(this, 20));
+            }
+            UiKit.pressScale(cell, 0.96f);
             cell.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     prefs.setThemePreset(idx);
@@ -844,14 +880,11 @@ public class MainActivity extends Activity {
         addCard(page, bkCard, 8);
     }
 
-    /** ترويسة قسم داخل شاشة الإعدادات — أيقونة داخل شارة دائرية */
+    /** ترويسة قسم داخل شاشة الإعدادات — أيقونة داخل شارة زجاجية متوهجة */
     private void pageSection(LinearLayout page, int iconType, String title) {
         LinearLayout head = UiKit.hstack(this);
-        FrameLayout badge = new FrameLayout(this);
-        badge.setBackground(UiKit.rounded(0x267C5CFF, 10, this));
-        Icon g = new Icon(this, iconType, UiKit.ACCENT_SOFT);
-        badge.addView(g, new FrameLayout.LayoutParams(dp(15), dp(15), Gravity.CENTER));
-        head.addView(badge, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        FrameLayout badge = UiKit.iconBadge(this, iconType, 30, 16);
+        head.addView(badge, new LinearLayout.LayoutParams(dp(30), dp(30)));
         TextView t = UiKit.text(this, title, 16, UiKit.TEXT_MAIN, true);
         LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -882,7 +915,12 @@ public class MainActivity extends Activity {
         }
         for (final String[] s : list) {
             LinearLayout row = UiKit.hstack(this);
-            row.setBackground(UiKit.outlined(UiKit.FIELD_BG, 12, UiKit.FIELD_STROKE, 1, this));
+            GradientDrawable rowG = new GradientDrawable();
+            rowG.setOrientation(GradientDrawable.Orientation.TL_BR);
+            rowG.setColors(new int[]{0x16FFFFFF, 0x0BFFFFFF});
+            rowG.setCornerRadius(dp(14));
+            rowG.setStroke(dp(1), 0x2EFFFFFF);
+            row.setBackground(rowG);
             row.setPadding(dp(12), dp(9), dp(8), dp(9));
 
             TextView tv = new TextView(this);

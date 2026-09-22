@@ -13,13 +13,13 @@ import android.widget.Switch;
 import android.widget.TextView;
 
 /**
- * مكتبة مكونات الواجهة العصرية — DRS Smart v2.6
- * بطاقات دائرية، أزرار متدرجة، مفاتيح تبديل ملونة، أزرار مقسمة، حقول أنيقة.
- * نظام ألوان موحد داكن أنيق في كل شاشات التطبيق.
+ * مكتبة مكونات الواجهة الزجاجية — DRS Smart v2.7
+ * Glassmorphism حقيقي: بطاقات شبه شفافة بحدود مضيئة، أزرار متدرجة بنفسجية،
+ * Ripple وضغط مرن عند اللمس، شارات أيقونات متوهجة — فوق خلفية AuroraBg.
  */
 public final class UiKit {
 
-    // ==================== نظام الألوان الموحد ====================
+    // ==================== نظام الألوان الزجاجي الموحد ====================
     public static final int PAGE_BG      = 0xFF070B18;
     public static final int CARD_BG      = 0xFF101731;
     public static final int CARD_STROKE  = 0xFF1F2A4D;
@@ -30,8 +30,8 @@ public final class UiKit {
     public static final int ACCENT_DARK  = 0xFF5B3FE0;
     public static final int ACCENT_SOFT  = 0xFFB388FF;
     public static final int TEXT_MAIN    = 0xFFEEF1FF;
-    public static final int TEXT_SUB     = 0xFF8E97C4;
-    public static final int TEXT_FAINT   = 0xFF667099;
+    public static final int TEXT_SUB     = 0xFFA9B2DC;
+    public static final int TEXT_FAINT   = 0xFF7A84B2;
     public static final int GREEN        = 0xFF66D99A;
     public static final int AMBER        = 0xFFFFC93A;
     public static final int RED          = 0xFFFF7B6B;
@@ -39,6 +39,12 @@ public final class UiKit {
     public static final int FIELD_STROKE = 0xFF26305A;
     public static final int NAV_BG       = 0xFF0C1226;
     public static final int TILE_BG      = 0xFF141B3A;
+
+    // ألوان الزجاج
+    public static final int GLASS_TOP    = 0x1FFFFFFF;  // تعبئة علوية
+    public static final int GLASS_BOTTOM = 0x0BFFFFFF;  // تعبئة سفلية
+    public static final int GLASS_STROKE = 0x30FFFFFF;  // حد مضيء رقيق
+    public static final int RIPPLE_WHITE = 0x33FFFFFF;
 
     private UiKit() {}
 
@@ -68,17 +74,96 @@ public final class UiKit {
     public static GradientDrawable heroGradient(Context c) {
         GradientDrawable g = new GradientDrawable();
         g.setOrientation(GradientDrawable.Orientation.TL_BR);
-        g.setColors(new int[]{HERO_START, HERO_MID, HERO_END});
-        g.setCornerRadius(dp(c, 24));
+        // تدرج بنفسجي شبه شفاف — زجاج مصبغ بلمسة توهج
+        g.setColors(new int[]{0x54301E6E, 0x381A1F4E, 0x2A101731});
+        g.setCornerRadius(dp(c, 26));
+        g.setStroke(Math.max(1, dp(c, 1)), 0x3C9D7BFF);
         return g;
     }
 
     public static GradientDrawable accentGradient(Context c, float radiusDp) {
         GradientDrawable g = new GradientDrawable();
-        g.setOrientation(GradientDrawable.Orientation.LEFT_RIGHT);
-        g.setColors(new int[]{ACCENT_DARK, ACCENT});
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{ACCENT_DARK, ACCENT, 0xFF9D7BFF});
         g.setCornerRadius(dp(c, radiusDp));
         return g;
+    }
+
+    // ==================== الزجاج (Glassmorphism) ====================
+
+    /** بطاقة زجاجية: تعبئة شبه شفافة متدرجة + حد مضيء رقيق */
+    public static GradientDrawable glass(Context c, float radiusDp) {
+        GradientDrawable g = new GradientDrawable();
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{GLASS_TOP, GLASS_BOTTOM});
+        g.setCornerRadius(dp(c, radiusDp));
+        g.setStroke(Math.max(1, dp(c, 1)), GLASS_STROKE);
+        return g;
+    }
+
+    /** حالة الضغط: زجاج أسطع بحد أوضح */
+    public static GradientDrawable glassPressed(Context c, float radiusDp) {
+        GradientDrawable g = new GradientDrawable();
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{0x30FFFFFF, 0x1AFFFFFF});
+        g.setCornerRadius(dp(c, radiusDp));
+        g.setStroke(Math.max(1, dp(c, 1)), 0x55FFFFFF);
+        return g;
+    }
+
+    /** يضيف Ripple + توهج ضغط حول أي عنصر بخلفية جاهزة */
+    public static void ripple(View v, android.graphics.drawable.Drawable bg,
+                              int rippleColor, float radiusDp) {
+        try {
+            android.graphics.drawable.RippleDrawable rd =
+                    new android.graphics.drawable.RippleDrawable(
+                            android.content.res.ColorStateList.valueOf(rippleColor),
+                            bg, rounded(0xFFFFFFFF, radiusDp, v.getContext()));
+            v.setBackground(rd);
+        } catch (Throwable t) {
+            v.setBackground(bg);
+        }
+    }
+
+    /** انكماش مرن عند اللمس (Scale) دون التأثير على النقر */
+    public static void pressScale(View v, float scale) {
+        v.setOnTouchListener((v2, ev) -> {
+            switch (ev.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v2.animate().scaleX(scale).scaleY(scale).setDuration(90)
+                            .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                            .start();
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v2.animate().scaleX(1f).scaleY(1f).setDuration(150)
+                            .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                            .start();
+                    break;
+            }
+            return false;
+        });
+    }
+
+    /** توهج ناعم حول نص (أرقام الإحصاءات) */
+    public static void glowText(TextView tv, int glowColor, float radiusDp, Context c) {
+        tv.setShadowLayer(dp(c, radiusDp), 0, 0, glowColor);
+    }
+
+    /** شارة أيقونة زجاجية متوهجة: حاوية متدرجة + أيقونة مرسومة */
+    public static android.widget.FrameLayout iconBadge(Context c, int iconType,
+                                                       float badgeDp, float iconDp) {
+        android.widget.FrameLayout b = new android.widget.FrameLayout(c);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setOrientation(GradientDrawable.Orientation.TL_BR);
+        bg.setColors(new int[]{0x477C5CFF, 0x265B3FE0});
+        bg.setCornerRadius(dp(c, badgeDp * 0.34f));
+        bg.setStroke(Math.max(1, dp(c, 1)), 0x599D7BFF);
+        b.setBackground(bg);
+        Icon ic = new Icon(c, iconType, 0xFFD4C6FF);
+        b.addView(ic, new android.widget.FrameLayout.LayoutParams(
+                dp(c, iconDp), dp(c, iconDp), Gravity.CENTER));
+        return b;
     }
 
     // ==================== الحاويات ====================
@@ -98,7 +183,7 @@ public final class UiKit {
 
     public static LinearLayout card(Context c) {
         LinearLayout card = vstack(c);
-        card.setBackground(outlined(CARD_BG, 20, CARD_STROKE, 1, c));
+        card.setBackground(glass(c, 24));
         card.setPadding(dp(c, 18), dp(c, 18), dp(c, 18), dp(c, 18));
         return card;
     }
@@ -134,15 +219,20 @@ public final class UiKit {
         return text(c, s, 12, TEXT_FAINT, false);
     }
 
-    /** شارة صغيرة دائرية الحواف */
+    /** شارة صغيرة دائرية الحواف — زجاجية */
     public static TextView chip(Context c, String s, int bg, int stroke, int fg) {
         TextView tv = new TextView(c);
         tv.setText(s);
         tv.setTextSize(11.5f);
         tv.setTypeface(medium());
         tv.setTextColor(fg);
-        tv.setPadding(dp(c, 10), dp(c, 4), dp(c, 10), dp(c, 4));
-        tv.setBackground(outlined(bg, 14, stroke, 1, c));
+        tv.setPadding(dp(c, 11), dp(c, 5), dp(c, 11), dp(c, 5));
+        GradientDrawable g = new GradientDrawable();
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{0x33FFFFFF, 0x1AFFFFFF});
+        g.setCornerRadius(dp(c, 16));
+        g.setStroke(Math.max(1, dp(c, 1)), stroke);
+        tv.setBackground(g);
         return tv;
     }
 
@@ -150,21 +240,27 @@ public final class UiKit {
 
     public static Button primaryButton(Context c, String s, View.OnClickListener l) {
         Button b = baseButton(c, s, l);
-        b.setBackground(accentGradient(c, 14));
+        ripple(b, accentGradient(c, 18), 0x40FFFFFF, 18);
         b.setTextColor(0xFFFFFFFF);
         return b;
     }
 
     public static Button secondaryButton(Context c, String s, View.OnClickListener l) {
         Button b = baseButton(c, s, l);
-        b.setBackground(outlined(TILE_BG, 14, ACCENT, 1.2f, c));
+        // زجاج شفاف بحد بنفسجي مضيء
+        GradientDrawable g = new GradientDrawable();
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{0x1FFFFFFF, 0x0FFFFFFF});
+        g.setCornerRadius(dp(c, 18));
+        g.setStroke(Math.max(1, dp(c, 1.2f)), 0x7A7C5CFF);
+        ripple(b, g, 0x307C5CFF, 18);
         b.setTextColor(ACCENT_SOFT);
         return b;
     }
 
     public static Button dangerButton(Context c, String s, View.OnClickListener l) {
         Button b = baseButton(c, s, l);
-        b.setBackground(outlined(0xFF1A0E12, 14, RED, 1.2f, c));
+        ripple(b, outlined(0x1AFF7B6B, 18, RED, 1.2f, c), 0x30FF7B6B, 18);
         b.setTextColor(RED);
         return b;
     }
@@ -232,7 +328,13 @@ public final class UiKit {
     public static LinearLayout segmented(Context c, String[] labels, int selected,
                                          final IntListener listener) {
         LinearLayout wrap = vstack(c);
-        wrap.setBackground(rounded(FIELD_BG, 12, c));
+        // وعاء زجاجي شفاف
+        GradientDrawable wg = new GradientDrawable();
+        wg.setOrientation(GradientDrawable.Orientation.TL_BR);
+        wg.setColors(new int[]{0x14FFFFFF, 0x09FFFFFF});
+        wg.setCornerRadius(dp(c, 14));
+        wg.setStroke(Math.max(1, dp(c, 1)), 0x2EFFFFFF);
+        wrap.setBackground(wg);
         wrap.setPadding(dp(c, 4), dp(c, 4), dp(c, 4), dp(c, 4));
 
         LinearLayout row = hstack(c);
@@ -281,7 +383,13 @@ public final class UiKit {
         et.setTextColor(TEXT_MAIN);
         et.setTextSize(14);
         et.setMinLines(minLines);
-        et.setBackground(outlined(FIELD_BG, 12, FIELD_STROKE, 1, c));
+        // حقل زجاجي: تعبئة شبه شفافة + حد مضيء
+        GradientDrawable g = new GradientDrawable();
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{0x14FFFFFF, 0x09FFFFFF});
+        g.setCornerRadius(dp(c, 14));
+        g.setStroke(Math.max(1, dp(c, 1)), 0x2EFFFFFF);
+        et.setBackground(g);
         et.setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12));
         return et;
     }
@@ -290,28 +398,31 @@ public final class UiKit {
 
     public static TextView notice(Context c, String s, int bg, int stroke, int fg) {
         TextView tv = text(c, s, 12.5f, fg, false);
-        tv.setBackground(outlined(bg, 12, stroke, 1, c));
+        GradientDrawable g = new GradientDrawable();
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{(bg & 0x00FFFFFF) | 0x23000000, (bg & 0x00FFFFFF) | 0x16000000});
+        g.setCornerRadius(dp(c, 14));
+        g.setStroke(Math.max(1, dp(c, 1)), (stroke & 0x00FFFFFF) | 0x48000000);
+        tv.setBackground(g);
         tv.setPadding(dp(c, 12), dp(c, 10), dp(c, 12), dp(c, 10));
         return tv;
     }
 
-    /** صف عنصر شبكي قابل للنقر مع أيقونة مرسومة داخل شارة وعنوان ووصف */
+    /** صف عنصر شبكي قابل للنقر — بطاقة زجاجية بأيقونة داخل شارة متوهجة وضغط مرن */
     public static LinearLayout tile(Context c, int iconType, String titleStr,
                                     String subStr, View.OnClickListener l) {
         LinearLayout t = vstack(c);
         t.setGravity(Gravity.CENTER);
-        t.setBackground(outlined(TILE_BG, 18, CARD_STROKE, 1, c));
         t.setClickable(true);
         t.setOnClickListener(l);
+        ripple(t, glass(c, 22), RIPPLE_WHITE, 22);
+        pressScale(t, 0.96f);
+        t.setPadding(dp(c, 12), dp(c, 14), dp(c, 12), dp(c, 14));
 
-        // شارة الأيقونة: مربع دائري الحواف بلمسة لون التمييز
-        android.widget.FrameLayout badge = new android.widget.FrameLayout(c);
-        badge.setBackground(rounded(0x2E7C5CFF, 13, c));
-        Icon ic = new Icon(c, iconType, ACCENT_SOFT);
-        badge.addView(ic, new android.widget.FrameLayout.LayoutParams(
-                dp(c, 22), dp(c, 22), Gravity.CENTER));
-        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(dp(c, 42), dp(c, 42));
-        bLp.setMargins(0, 0, 0, dp(c, 8));
+        // شارة الأيقونة الزجاجية المتوهجة
+        android.widget.FrameLayout badge = iconBadge(c, iconType, 52, 26);
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(dp(c, 52), dp(c, 52));
+        bLp.setMargins(0, 0, 0, dp(c, 10));
         t.addView(badge, bLp);
 
         TextView tt = text(c, titleStr, 13.5f, TEXT_MAIN, true);
