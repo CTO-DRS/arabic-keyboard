@@ -132,6 +132,12 @@ public class SuggestEngine {
     /** عدد الكلمات التي تعلّمها المحرك من المستخدم */
     public int learnedCount() { return learned.size(); }
 
+    /** حجم القاموس العربي المضمّن (للفحص الذكي) */
+    public int arDictSize() { return arWords.size(); }
+
+    /** حجم القاموس الإنجليزي المضمّن (للفحص الذكي) */
+    public int enDictSize() { return enWords.size(); }
+
     // ==================== الاختصارات النصية ====================
 
     private void loadShortcuts() {

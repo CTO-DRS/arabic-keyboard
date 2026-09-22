@@ -327,6 +327,15 @@ public class KeyboardView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        // حماية الرسم: أي خطأ مرور مفاجئ يُسجل ولا يُغلق التطبيق
+        try {
+            drawAll(canvas);
+        } catch (Throwable t) {
+            CrashGuard.log(t);
+        }
+    }
+
+    private void drawAll(Canvas canvas) {
         drawBackground(canvas);
         if (stripVisible) drawStrip(canvas);
         for (List<LaidKey> lr : laid) {
@@ -721,20 +730,28 @@ public class KeyboardView extends View {
     }
 
     @Override
-    public boolean onTouchEvent(MotionEvent ev) {
-        switch (ev.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
-                onDown(ev);
-                return true;
-            case MotionEvent.ACTION_MOVE:
-                onMove(ev);
-                return true;
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
-                onUp(ev.getActionMasked() == MotionEvent.ACTION_CANCEL, ev);
-                return true;
+    public boolean onTouchEvent(final MotionEvent ev) {
+        // حماية كاملة للمس: أي استثناء يُسجل ولا يُغلق التطبيق
+        try {
+            switch (ev.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    onDown(ev);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    onMove(ev);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    onUp(ev.getActionMasked() == MotionEvent.ACTION_CANCEL, ev);
+                    return true;
+            }
+            return super.onTouchEvent(ev);
+        } catch (Throwable t) {
+            CrashGuard.log(t);
+            // تنظيف الحالة كي لا تبقى مفاتيح عالقة
+            try { cancelAll(); } catch (Exception ignored) {}
+            return true;
         }
-        return super.onTouchEvent(ev);
     }
 
     /** فهرس خانة الشريط عند نقطة: 0 حافظة، 1-3 كلمات، 4 درع، 5 تحرير، -1 لا شيء */
@@ -840,7 +857,8 @@ public class KeyboardView extends View {
                 if (gk != null && gk.key.type == Key.CHAR && gk.key.text != null
                         && gk.key.text.length() == 1) {
                     String ch = gk.key.text;
-                    if (glideLetters.charAt(glideLetters.length() - 1) != ch.charAt(0)) {
+                    if (glideLetters.length() == 0
+                            || glideLetters.charAt(glideLetters.length() - 1) != ch.charAt(0)) {
                         glideLetters.append(ch);
                     }
                 }

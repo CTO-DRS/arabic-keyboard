@@ -40,12 +40,14 @@ public class MainActivity extends Activity {
     private SuggestEngine engine;
     private TextView tvStatus;
     private TextView tvDictCount;
+    private LinearLayout stResults;
     private InputMethodManager imm;
     private LinearLayout sections;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrashGuard.install(this); // نظام الحماية الذكي من الأعطال
         setContentView(R.layout.activity_main);
         prefs = new Prefs(this);
         engine = new SuggestEngine(this);
@@ -81,6 +83,9 @@ public class MainActivity extends Activity {
             }
         }));
         addCard(statusCard);
+
+        // ===== بطاقة الفحص الذكي المتكامل =====
+        addCard(buildSelfTestCard());
 
         // ===== بطاقة الثيمات =====
         LinearLayout themeCard = card();
@@ -439,6 +444,189 @@ public class MainActivity extends Activity {
                 engine.addShortcut(ab, ex);
                 Toast.makeText(MainActivity.this, R.string.shortcut_added, Toast.LENGTH_SHORT).show();
                 buildSections();
+            }
+        }));
+    }
+
+    // ==================== الفحص الذكي المتكامل ====================
+
+    /** بطاقة الفحص الذكي: ملخص سريع فوري + زر الفحص الشامل + صندوق النتائج */
+    private LinearLayout buildSelfTestCard() {
+        LinearLayout stCard = card();
+        stCard.addView(label(R.string.selftest_title, 17, R.color.text_main, true));
+        stCard.addView(label(R.string.selftest_info, 13, R.color.text_sub, false));
+
+        // فحص سريع فوري عند فتح الشاشة
+        TextView quick = new TextView(this);
+        quick.setTextSize(13);
+        quick.setLineSpacing(dp3(), 1f);
+        boolean crash = CrashGuard.hasReport();
+        if (crash) {
+            String s = CrashGuard.lastReportSummary();
+            quick.setText(getString(R.string.selftest_quick_crash)
+                    + (s == null ? "" : "\n" + s));
+            quick.setTextColor(0xFFFF7B6B);
+        } else if (isEnabledBySystem() && isSelected()) {
+            quick.setText(R.string.selftest_quick_ok);
+            quick.setTextColor(0xFF66D99A);
+        } else {
+            quick.setText(R.string.selftest_quick_pending);
+            quick.setTextColor(0xFFFFC93A);
+        }
+        LinearLayout.LayoutParams qLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        qLp.setMargins(0, dp(10), 0, 0);
+        stCard.addView(quick, qLp);
+
+        stResults = new LinearLayout(this);
+        stResults.setOrientation(LinearLayout.VERTICAL);
+        stCard.addView(stResults, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        stCard.addView(primaryButton(R.string.selftest_run, new View.OnClickListener() {
+            @Override public void onClick(View v) { runFullSelfTest(); }
+        }));
+        return stCard;
+    }
+
+    /** تشغيل الفحص الشامل في خيط خلفي ثم عرض النتائج */
+    private void runFullSelfTest() {
+        if (stResults == null) return;
+        stResults.removeAllViews();
+        TextView running = new TextView(this);
+        running.setText(R.string.selftest_running);
+        running.setTextSize(14);
+        running.setTextColor(0xFFFFC93A);
+        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rLp.setMargins(0, dp(12), 0, 0);
+        stResults.addView(running, rLp);
+
+        SelfTest.Report r0 = null;
+        try {
+            r0 = SelfTest.runAll(this);
+        } catch (Throwable t) {
+            CrashGuard.log(t);
+        }
+        final SelfTest.Report rep = r0;
+        stResults.removeAllViews();
+        if (rep == null) {
+            TextView fail = new TextView(this);
+            fail.setText(R.string.selftest_failed_run);
+            fail.setTextSize(14);
+            fail.setTextColor(0xFFFF7B6B);
+            stResults.addView(fail, rLp);
+            return;
+        }
+        showSelfTestResults(rep);
+    }
+
+    /** عرض نتائج الفحص: خلاصة ملونة + صف لكل فحص + سجل الأعطال + أزرار النسخ والمسح */
+    private void showSelfTestResults(final SelfTest.Report rep) {
+        // الخلاصة العامة
+        TextView sum = new TextView(this);
+        sum.setText(rep.summary);
+        sum.setTextSize(15);
+        sum.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        sum.setTextColor(rep.failed == 0 ? 0xFF66D99A : (rep.score >= 60 ? 0xFFFFC93A : 0xFFFF7B6B));
+        sum.setLineSpacing(dp3(), 1f);
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sLp.setMargins(0, dp(12), 0, dp(4));
+        stResults.addView(sum, sLp);
+
+        // ملاحظة الإصلاح الذاتي إن حدث
+        if (rep.healed) {
+            TextView healed = new TextView(this);
+            healed.setText(R.string.selftest_healed);
+            healed.setTextSize(13);
+            healed.setTextColor(0xFF66D99A);
+            stResults.addView(healed, sLp);
+        }
+
+        // صفوف النتائج
+        for (final SelfTest.Result x : rep.results) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.TOP);
+
+            TextView mark = new TextView(this);
+            switch (x.status) {
+                case SelfTest.PASS: mark.setText("✔"); mark.setTextColor(0xFF66D99A); break;
+                case SelfTest.WARN: mark.setText("⚠"); mark.setTextColor(0xFFFFC93A); break;
+                case SelfTest.FAIL: mark.setText("✖"); mark.setTextColor(0xFFFF7B6B); break;
+                default: mark.setText("ℹ"); mark.setTextColor(0xFF8A93C4); break;
+            }
+            mark.setTextSize(15);
+            mark.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            mark.setPadding(0, dp(2), dp(10), 0);
+            row.addView(mark, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView name = new TextView(this);
+            name.setText(x.name);
+            name.setTextSize(14);
+            name.setTextColor(0xFFEDF0FF);
+            name.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            TextView det = new TextView(this);
+            det.setText(x.detail);
+            det.setTextSize(12);
+            det.setTextColor(0xFF9AA3D0);
+            det.setLineSpacing(dp3(), 1f);
+            col.addView(name, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            col.addView(det, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.addView(col, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            rowLp.setMargins(0, dp(10), 0, 0);
+            stResults.addView(row, rowLp);
+        }
+
+        // صندوق آخر عطل مسجل + زر المسح
+        if (CrashGuard.hasReport()) {
+            TextView cr = new TextView(this);
+            String s = CrashGuard.lastReportSummary();
+            cr.setText(getString(R.string.selftest_last_crash) + "\n" + (s == null ? "—" : s));
+            cr.setTextSize(12);
+            cr.setTextColor(0xFFFF7B6B);
+            GradientDrawable crBg = new GradientDrawable();
+            crBg.setCornerRadius(dp(9));
+            crBg.setColor(0xFF1A0E12);
+            crBg.setStroke(dp(1), 0xFF5A2430);
+            cr.setBackground(crBg);
+            cr.setPadding(dp(12), dp(10), dp(12), dp(10));
+            LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cLp.setMargins(0, dp(14), 0, 0);
+            stResults.addView(cr, cLp);
+
+            stResults.addView(secondaryButton(R.string.selftest_clear, new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    CrashGuard.clearReport();
+                    Toast.makeText(MainActivity.this, R.string.selftest_cleared, Toast.LENGTH_SHORT).show();
+                    buildSections();
+                }
+            }));
+        }
+
+        // زر نسخ التقرير
+        stResults.addView(secondaryButton(R.string.selftest_copy, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                try {
+                    ClipboardManager cm = (ClipboardManager)
+                            getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(ClipData.newPlainText("DRS-SelfTest",
+                                SelfTest.buildReport(rep)));
+                    }
+                    Toast.makeText(MainActivity.this, R.string.selftest_copied, Toast.LENGTH_SHORT).show();
+                } catch (Exception ignored) {}
             }
         }));
     }

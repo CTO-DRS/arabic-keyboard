@@ -99,12 +99,30 @@ public class ImeService extends InputMethodService
     @Override
     public void onCreate() {
         super.onCreate();
+        CrashGuard.install(this); // نظام الحماية الذكي من الأعطال
         prefs = new Prefs(this);
         engine = new SuggestEngine(this);
         panelPrefs = getSharedPreferences("kb_panel", Context.MODE_PRIVATE);
         loadClips();
         loadPins();
         VoiceInputActivity.delegate = this;
+    }
+
+    /** غلاف تنفيذ آمن: أي استثناء يُسجّل في سجل الأعطال دون إسقاط الخدمة */
+    private void safeRun(String op, Runnable r) {
+        try {
+            r.run();
+        } catch (Throwable t) {
+            CrashGuard.log(t);
+        }
+    }
+
+    /** ضمان وجود ثيم صالح قبل أي استخدام — يمنع أي NPE في ترتيب البناء */
+    private void ensureTheme() {
+        if (theme == null) {
+            theme = ThemeSet.resolve(prefs == null ? ThemeSet.DEFAULT_PRESET : prefs.themePreset,
+                    systemNight(), prefs == null ? 0 : prefs.accent);
+        }
     }
 
     @Override
@@ -132,7 +150,22 @@ public class ImeService extends InputMethodService
 
     @Override
     public View onCreateInputView() {
+        // حماية كاملة: أي عطل غير متوقع في البناء لا يُغلق التطبيق —
+        // تُستعاد اللوحة في وضع آمن مباشرة
+        try {
+            return buildInputView();
+        } catch (Throwable t) {
+            CrashGuard.log(t);
+            return buildSafeRecoveryView();
+        }
+    }
+
+    /** البناء الكامل للوحة — الثيم يُحل أولاً قبل أي مكوّن يستخدمه */
+    private View buildInputView() {
         prefs.reload();
+        // الإصلاح الجذري لعطل الإغلاق الفوري: الثيم يُحدد قبل بناء الألواح
+        theme = ThemeSet.resolve(prefs.themePreset, systemNight(), prefs.accent);
+
         container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
 
@@ -160,12 +193,50 @@ public class ImeService extends InputMethodService
         container.addView(clipPanel, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, panelH));
 
-        theme = ThemeSet.resolve(prefs.themePreset, systemNight(), prefs.accent);
         kv.setTheme(theme);
         applyPanelTheme();
         mode = lang;
         refreshLayout();
         return container;
+    }
+
+    /** وضع الاستعادة الآمن: لوحة مبسطة تعمل دائماً حتى لو فشل البناء الكامل */
+    private View buildSafeRecoveryView() {
+        try {
+            container = new LinearLayout(this);
+            container.setOrientation(LinearLayout.VERTICAL);
+            kv = new KeyboardView(this);
+            kv.setListener(this);
+            kv.setStripListener(this);
+            kv.setGlideListener(this);
+            kv.setTheme(ThemeSet.resolve(ThemeSet.DEFAULT_PRESET, systemNight(), 0));
+            kv.setKeyboard(Layouts.arabic(false, false));
+            container.addView(kv, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView msg = new TextView(this);
+            msg.setText("تم استعادة اللوحة في الوضع الآمن — أعد فتح الحقل لاستعادة كل الميزات");
+            msg.setTextSize(13);
+            msg.setTextColor(0xFFFFC93A);
+            msg.setGravity(Gravity.CENTER);
+            msg.setPadding(0, dp(6), 0, dp(6));
+            container.addView(msg, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            mode = MODE_AR;
+            return container;
+        } catch (Throwable t2) {
+            // آخر ملجأ: رسالة نصية فقط — لا انهيار مهما حدث
+            try {
+                TextView tv = new TextView(this);
+                tv.setText("تعذر عرض لوحة المفاتيح — أعد فتح الحقل");
+                tv.setTextSize(15);
+                tv.setTextColor(0xFFFFFFFF);
+                tv.setGravity(Gravity.CENTER);
+                tv.setPadding(0, dp(48), 0, dp(48));
+                return tv;
+            } catch (Throwable t3) {
+                return new View(this);
+            }
+        }
     }
 
     // ==================== لوحة الإيموجي ====================
@@ -201,6 +272,7 @@ public class ImeService extends InputMethodService
     }
 
     private void buildTabs() {
+        ensureTheme(); // حماية: الثيم يجب أن يكون جاهزاً قبل أي تنسيق
         emojiTabs.removeAllViews();
         for (int i = 0; i < Layouts.EMOJI_GROUPS.length; i++) {
             final int idx = i;
@@ -294,6 +366,7 @@ public class ImeService extends InputMethodService
     // ==================== لوحة الحافظة ====================
 
     private View buildClipPanel() {
+        ensureTheme();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
 
@@ -494,20 +567,25 @@ public class ImeService extends InputMethodService
     // ==================== دورة الحياة ====================
 
     @Override
-    public void onStartInputView(EditorInfo info, boolean restarting) {
+    public void onStartInputView(final EditorInfo info, final boolean restarting) {
         super.onStartInputView(info, restarting);
+        safeRun("onStartInputView", new Runnable() {
+            @Override public void run() { afterStart(info); }
+        });
+    }
+
+    private void afterStart(EditorInfo info) {
         prefs.reload();
-        ThemeSet t = ThemeSet.resolve(prefs.themePreset, systemNight(), prefs.accent);
+        theme = ThemeSet.resolve(prefs.themePreset, systemNight(), prefs.accent);
         if (kv != null) {
             kv.hapticsEnabled = prefs.haptics;
-            kv.setTheme(t);
+            kv.setTheme(theme);
             kv.setKeyHeightScale(heightScale(prefs.keyHeight));
             kv.setOneHanded(prefs.oneHanded);
             kv.glideEnabled = prefs.glide && !prefs.incognito;
             kv.incognitoOn = prefs.incognito;
             kv.setLongPressDelay(prefs.longPressMs());
         }
-        theme = t;
         applyPanelTheme();
         panel = PANEL_NONE;
         mode = lang;
@@ -559,6 +637,7 @@ public class ImeService extends InputMethodService
     }
 
     private void applyPanelTheme() {
+        ensureTheme();
         if (clipList != null) rebuildClipList(); // يعيد البناء بخلفيات الثيم الجديد
         if (emojiPanel != null) emojiPanel.setBackgroundColor(theme.kbBg);
         buildTabs(); // يعيد تنسيق التبويبات بألوان الثيم
@@ -674,7 +753,13 @@ public class ImeService extends InputMethodService
     }
 
     @Override
-    public void onStripAction(int action, int index) {
+    public void onStripAction(final int action, final int index) {
+        safeRun("onStripAction", new Runnable() {
+            @Override public void run() { handleStripAction(action, index); }
+        });
+    }
+
+    private void handleStripAction(int action, int index) {
         if (action == KeyboardView.STRIP_CLIP) {
             togglePanel(PANEL_CLIP);
             return;
@@ -747,7 +832,13 @@ public class ImeService extends InputMethodService
     // ==================== الكتابة بالسحب (Glide) ====================
 
     @Override
-    public void onGlide(List<float[]> tracePoints, String letters) {
+    public void onGlide(final List<float[]> tracePoints, final String letters) {
+        safeRun("onGlide", new Runnable() {
+            @Override public void run() { handleGlide(tracePoints, letters); }
+        });
+    }
+
+    private void handleGlide(List<float[]> tracePoints, String letters) {
         if (!isLetterMode()) return;
         InputConnection ic = getCurrentInputConnection();
         if (ic == null || tracePoints == null || tracePoints.size() < 2) return;
@@ -872,7 +963,13 @@ public class ImeService extends InputMethodService
     // ==================== التعامل مع المفاتيح ====================
 
     @Override
-    public void onKey(Key k) {
+    public void onKey(final Key k) {
+        safeRun("onKey", new Runnable() {
+            @Override public void run() { handleKey(k); }
+        });
+    }
+
+    private void handleKey(Key k) {
         playSound();
         InputConnection ic = getCurrentInputConnection();
         switch (k.code) {
@@ -1041,7 +1138,13 @@ public class ImeService extends InputMethodService
     }
 
     @Override
-    public void onText(String t) {
+    public void onText(final String t) {
+        safeRun("onText", new Runnable() {
+            @Override public void run() { handleText(t); }
+        });
+    }
+
+    private void handleText(String t) {
         playSound();
         undoCorrected = null; undoOriginal = null;
         InputConnection ic = getCurrentInputConnection();
@@ -1122,7 +1225,13 @@ public class ImeService extends InputMethodService
     }
 
     @Override
-    public void onKeyLongPress(Key k) {
+    public void onKeyLongPress(final Key k) {
+        safeRun("onKeyLongPress", new Runnable() {
+            @Override public void run() { handleKeyLongPress(k); }
+        });
+    }
+
+    private void handleKeyLongPress(Key k) {
         if (k.code == Key.CODE_SHIFT) {
             shiftLock = true; shiftOn = true;
             kv.setShifted(true);
