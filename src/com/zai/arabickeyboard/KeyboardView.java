@@ -441,6 +441,9 @@ public class KeyboardView extends View {
             case Key.CODE_EMOJI:
                 drawEmojiIcon(canvas, cx, cy, lk.r.width(), lk.r.height());
                 return;
+            case Key.CODE_VOICE:
+                drawMicIcon(canvas, cx, cy, lk.r.width(), lk.r.height());
+                return;
             case Key.CODE_LANG:
                 drawTextFitted(canvas, k.label, cx, cy, lk.r.width() * 0.8f, keyH * 0.26f, textColorFor(k));
                 return;
@@ -574,6 +577,27 @@ public class KeyboardView extends View {
         canvas.drawPath(iconPath, iconPaint);
     }
 
+    private void drawMicIcon(Canvas canvas, float cx, float cy, float kw, float kh) {
+        float s = Math.min(kw, kh) * 0.20f;
+        iconPaint.setColor(theme.keyTextFunc);
+        iconPaint.setStyle(Paint.Style.STROKE);
+        iconPaint.setStrokeWidth(dp(1.8f));
+        iconPaint.setStrokeCap(Paint.Cap.ROUND);
+        // جسم الماييكروفون (كبسولة)
+        rectF.set(cx - s * 0.5f, cy - s * 1.3f, cx + s * 0.5f, cy + s * 0.3f);
+        canvas.drawRoundRect(rectF, s * 0.5f, s * 0.5f, iconPaint);
+        // القوس السفلي
+        iconPath.reset();
+        iconPath.moveTo(cx - s, cy - s * 0.1f);
+        iconPath.lineTo(cx - s, cy + s * 0.25f);
+        iconPath.quadTo(cx, cy + s * 1.5f, cx + s, cy + s * 0.25f);
+        iconPath.lineTo(cx + s, cy - s * 0.1f);
+        canvas.drawPath(iconPath, iconPaint);
+        // الساق
+        canvas.drawLine(cx, cy + s * 1.15f, cx, cy + s * 1.55f, iconPaint);
+        canvas.drawLine(cx - s * 0.55f, cy + s * 1.55f, cx + s * 0.55f, cy + s * 1.55f, iconPaint);
+    }
+
     // ==================== اللمس ====================
 
     private void pressFeedback() {
@@ -653,7 +677,8 @@ public class KeyboardView extends View {
             startRepeat();
         } else if (k.key.type == Key.CHAR && k.key.alts != null && !k.key.alts.isEmpty()) {
             scheduleLongPress(k, false);
-        } else if (k.key.code == Key.CODE_SHIFT || k.key.code == Key.CODE_LANG) {
+        } else if (k.key.code == Key.CODE_SHIFT || k.key.code == Key.CODE_LANG
+                || k.key.code == Key.CODE_MODE_NUM) {
             scheduleLongPress(k, true);
         }
     }

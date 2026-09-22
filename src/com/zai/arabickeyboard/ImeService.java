@@ -49,6 +49,7 @@ public class ImeService extends InputMethodService
     public static final int MODE_SYM2 = 7;
     public static final int MODE_EMOJI = 8;
     public static final int MODE_EDIT = 9;
+    public static final int MODE_NUMPAD = 10;
 
     private static final int PANEL_NONE = 0;
     private static final int PANEL_EMOJI = 1;
@@ -75,6 +76,10 @@ public class ImeService extends InputMethodService
     private SharedPreferences panelPrefs;
 
     private final List<String> clipItems = new ArrayList<>();
+    private final List<String> pinItems = new ArrayList<>();
+    private List<String> liveSugg;
+    private String undoCorrected;   // آخر كلمة صححها المحرك تلقائياً
+    private String undoOriginal;    // الكلمة الأصلية قبل التصحيح
 
     @Override
     public void onCreate() {
@@ -83,6 +88,14 @@ public class ImeService extends InputMethodService
         engine = new SuggestEngine(this);
         panelPrefs = getSharedPreferences("kb_panel", Context.MODE_PRIVATE);
         loadClips();
+        loadPins();
+        VoiceInputActivity.delegate = this;
+    }
+
+    @Override
+    public void onDestroy() {
+        if (VoiceInputActivity.delegate == this) VoiceInputActivity.delegate = null;
+        super.onDestroy();
     }
 
     @Override
@@ -127,7 +140,7 @@ public class ImeService extends InputMethodService
         container.addView(clipPanel, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, panelH));
 
-        theme = ThemeSet.resolve(prefs.themePreset, systemNight());
+        theme = ThemeSet.resolve(prefs.themePreset, systemNight(), prefs.accent);
         kv.setTheme(theme);
         applyPanelTheme();
         mode = lang;
@@ -282,6 +295,7 @@ public class ImeService extends InputMethodService
         clear.setClickable(true);
         clear.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
+                // مسح السجل فقط — العناصر المثبتة تبقى
                 clipItems.clear();
                 saveClips();
                 rebuildClipList();
@@ -313,7 +327,7 @@ public class ImeService extends InputMethodService
     private void rebuildClipList() {
         if (clipList == null) return;
         clipList.removeAllViews();
-        if (clipItems.isEmpty()) {
+        if (clipItems.isEmpty() && pinItems.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText(R.string.clip_empty);
             empty.setTextSize(14);
@@ -322,59 +336,82 @@ public class ImeService extends InputMethodService
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             return;
         }
-        for (int i = 0; i < clipItems.size(); i++) {
-            final int idx = i;
-            final String item = clipItems.get(i);
-            LinearLayout rowBg = new LinearLayout(this);
-            rowBg.setOrientation(LinearLayout.HORIZONTAL);
-            rowBg.setGravity(Gravity.CENTER_VERTICAL);
-            rowBg.setPadding(dp(12), dp(8), dp(8), dp(8));
-            GradientDrawable rowDrawable = new GradientDrawable();
-            rowDrawable.setCornerRadius(dp(8));
-            rowDrawable.setColor(theme.keyBg);
-            rowBg.setBackground(rowDrawable);
-
-            TextView text = new TextView(this);
-            text.setText(item);
-            text.setTextSize(14);
-            text.setMaxLines(2);
-            text.setEllipsize(TextUtils.TruncateAt.END);
-            text.setClickable(true);
-            text.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    InputConnection ic = getCurrentInputConnection();
-                    if (ic != null) ic.commitText(item, 1);
-                    closePanel();
-                }
-            });
-            rowBg.addView(text, new LinearLayout.LayoutParams(0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-            TextView del = new TextView(this);
-            del.setText("✕");
-            del.setTextSize(14);
-            del.setPadding(dp(10), dp(4), dp(6), dp(4));
-            del.setClickable(true);
-            del.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    if (idx < clipItems.size()) {
-                        clipItems.remove(idx);
-                        saveClips();
-                        rebuildClipList();
-                    }
-                }
-            });
-            rowBg.addView(del, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-            LinearLayout wrap = new LinearLayout(this);
-            wrap.setOrientation(LinearLayout.VERTICAL);
-            wrap.setPadding(0, dp(3), 0, dp(3));
-            wrap.addView(rowBg, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            clipList.addView(wrap, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // العناصر المثبتة أولاً (📌 ثم نقرة للصق، ضغط مطول لإلغاء التثبيت)
+        for (int i = 0; i < pinItems.size(); i++) {
+            clipList.addView(clipRow(pinItems.get(i), true));
         }
+        // سجل الحافظة العادي (ضغط مطول للتثبيت)
+        for (int i = 0; i < clipItems.size(); i++) {
+            clipList.addView(clipRow(clipItems.get(i), false));
+        }
+    }
+
+    /** صف عنصر حافظة: نقرة = لصق، ضغط مطول = تثبيت/إلغاء، ✕ = حذف */
+    private View clipRow(final String item, final boolean pinned) {
+        LinearLayout rowBg = new LinearLayout(this);
+        rowBg.setOrientation(LinearLayout.HORIZONTAL);
+        rowBg.setGravity(Gravity.CENTER_VERTICAL);
+        rowBg.setPadding(dp(12), dp(8), dp(8), dp(8));
+        GradientDrawable rowDrawable = new GradientDrawable();
+        rowDrawable.setCornerRadius(dp(8));
+        rowDrawable.setColor(theme.keyBg);
+        if (pinned) rowDrawable.setStroke(dp(1), theme.keyBgAction);
+        rowBg.setBackground(rowDrawable);
+
+        TextView text = new TextView(this);
+        text.setText(pinned ? "📌 " + item : item);
+        text.setTextSize(14);
+        text.setMaxLines(2);
+        text.setEllipsize(TextUtils.TruncateAt.END);
+        text.setClickable(true);
+        text.setLongClickable(true);
+        text.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.commitText(item, 1);
+                closePanel();
+            }
+        });
+        text.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) {
+                if (pinned) {
+                    pinItems.remove(item);
+                    savePins();
+                } else {
+                    clipItems.remove(item);
+                    if (pinItems.size() >= 5) pinItems.remove(pinItems.size() - 1);
+                    pinItems.add(0, item);
+                    saveClips();
+                    savePins();
+                }
+                rebuildClipList();
+                return true;
+            }
+        });
+        rowBg.addView(text, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView del = new TextView(this);
+        del.setText("✕");
+        del.setTextSize(14);
+        del.setPadding(dp(10), dp(4), dp(6), dp(4));
+        del.setClickable(true);
+        del.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (pinned) pinItems.remove(item); else clipItems.remove(item);
+                if (pinned) savePins(); else saveClips();
+                rebuildClipList();
+            }
+        });
+        rowBg.addView(del, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(0, dp(3), 0, dp(3));
+        wrap.addView(rowBg, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return wrap;
     }
 
     private void loadClips() {
@@ -394,6 +431,23 @@ public class ImeService extends InputMethodService
         panelPrefs.edit().putString("clips", sb.toString()).apply();
     }
 
+    private void loadPins() {
+        pinItems.clear();
+        String blob = panelPrefs.getString("pins", "");
+        for (String s : blob.split("\u0001")) {
+            if (!s.isEmpty()) pinItems.add(s);
+        }
+    }
+
+    private void savePins() {
+        StringBuilder sb = new StringBuilder();
+        for (String s : pinItems) {
+            if (sb.length() > 0) sb.append('\u0001');
+            sb.append(s);
+        }
+        panelPrefs.edit().putString("pins", sb.toString()).apply();
+    }
+
     /** التقاط النص المنسوخ حديثاً عند فتح الحقل */
     private void captureClipboard() {
         try {
@@ -405,6 +459,7 @@ public class ImeService extends InputMethodService
             if (cs == null) return;
             String text = cs.toString().trim();
             if (text.isEmpty() || text.length() > 2000) return;
+            if (pinItems.contains(text)) return; // مثبّت أصلاً — لا داعي للتكرار في السجل
             if (!clipItems.isEmpty() && clipItems.get(0).equals(text)) return;
             clipItems.remove(text);
             clipItems.add(0, text);
@@ -420,7 +475,7 @@ public class ImeService extends InputMethodService
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
         prefs.reload();
-        ThemeSet t = ThemeSet.resolve(prefs.themePreset, systemNight());
+        ThemeSet t = ThemeSet.resolve(prefs.themePreset, systemNight(), prefs.accent);
         if (kv != null) {
             kv.hapticsEnabled = prefs.haptics;
             kv.setTheme(t);
@@ -434,6 +489,8 @@ public class ImeService extends InputMethodService
         shiftOn = false;
         shiftLock = false;
         lastWasSpace = false;
+        undoCorrected = null;
+        undoOriginal = null;
         refreshLayout();
         updateEnterLabel();
         maybeAutoCapAtStart(info);
@@ -453,7 +510,7 @@ public class ImeService extends InputMethodService
         if (panelOpen) {
             kv.setKeyboard(Layouts.emojiNav(lang));
         } else {
-            kv.setKeyboard(Layouts.get(mode, lang, prefs.numRow));
+            kv.setKeyboard(Layouts.get(mode, lang, prefs.numRow, prefs.voice, prefs.arabicDigits));
         }
         kv.setShifted(isShifted());
         kv.setShiftLock(shiftLock);
@@ -546,18 +603,39 @@ public class ImeService extends InputMethodService
         return Character.isLetter(ch);
     }
 
+    /** الكلمة الواقعة قبل الكلمة الحالية مباشرة (للتنبؤ بالكلمة التالية والثنائيات) */
+    private String wordBefore(String current) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return null;
+        CharSequence before = ic.getTextBeforeCursor(96, 0);
+        if (before == null) return null;
+        int end = before.length() - (current == null ? 0 : current.length());
+        while (end > 0 && Character.isWhitespace(before.charAt(end - 1))) end--;
+        int start = end;
+        while (start > 0 && isWordChar(before.charAt(start - 1))) start--;
+        if (start >= end) return null;
+        return before.subSequence(start, end).toString();
+    }
+
     private void updateSuggestions() {
         if (kv == null) return;
         if (!prefs.suggest || !isLetterMode() || panel != PANEL_NONE) {
+            liveSugg = null;
             kv.setSuggestions(null);
             return;
         }
         String word = currentWord();
+        List<String> s;
         if (word.isEmpty()) {
-            kv.setSuggestions(null);
+            // لا كلمة تحت الكتابة: تنبؤ بالكلمة التالية من الكلمة السابقة
+            String prev = prefs.nextWord ? wordBefore("") : null;
+            s = (prev != null) ? engine.nextWords(prev, engineLang()) : null;
+            if (s != null && s.isEmpty()) s = null;
         } else {
-            kv.setSuggestions(engine.suggest(word, engineLang()));
+            s = engine.suggest(word, engineLang());
         }
+        liveSugg = s;
+        kv.setSuggestions(s);
     }
 
     @Override
@@ -581,15 +659,16 @@ public class ImeService extends InputMethodService
 
     private void applySuggestion(int index) {
         InputConnection ic = getCurrentInputConnection();
-        if (ic == null) return;
+        if (ic == null || liveSugg == null || index >= liveSugg.size()) return;
+        String picked = liveSugg.get(index);
         String word = currentWord();
-        List<String> sugg = engine.suggest(word, engineLang());
-        if (index >= sugg.size()) return;
-        String picked = sugg.get(index);
+        String prevWord = wordBefore(word);
         if (!word.isEmpty()) ic.deleteSurroundingText(word.length(), 0);
         ic.commitText(picked + " ", 1);
         engine.learn(picked, engineLang());
-        lastWasSpace = false;
+        if (prevWord != null) engine.learnBigram(prevWord, picked, engineLang());
+        lastWasSpace = true;
+        lastSpaceAt = System.currentTimeMillis();
         consumeShift();
         updateSuggestions();
     }
@@ -634,6 +713,14 @@ public class ImeService extends InputMethodService
                 closePanel();
                 refreshLayout(); updateEnterLabel();
                 return;
+            case Key.CODE_NUMPAD:
+                mode = MODE_NUMPAD; shiftOn = false; shiftLock = false;
+                closePanel();
+                refreshLayout(); updateEnterLabel();
+                return;
+            case Key.CODE_VOICE:
+                handleVoice();
+                return;
             case Key.CODE_BACKSPACE:
                 handleBackspace(ic);
                 return;
@@ -664,6 +751,7 @@ public class ImeService extends InputMethodService
             default: {
                 String t = currentText(k);
                 lastWasSpace = false;
+                undoCorrected = null; undoOriginal = null;
                 if (t == null || t.length() == 0) return;
                 if (ic != null) ic.commitText(t, 1);
                 consumeShift();
@@ -685,9 +773,12 @@ public class ImeService extends InputMethodService
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
         long now = System.currentTimeMillis();
+        undoCorrected = null; undoOriginal = null;
 
-        // التصحيح التلقائي عند الضغط على المسافة
         String word = currentWord();
+        String prevWord = wordBefore(word);
+
+        // التصحيح التلقائي عند الضغط على المسافة (إنجليزي مباشرة + عربي بعد التطبيع)
         if (isLetterMode() && prefs.autoCorrect && word.length() >= 4
                 && !engine.known(word, engineLang())) {
             String fix = engine.bestCorrection(word, engineLang());
@@ -695,15 +786,20 @@ public class ImeService extends InputMethodService
                 ic.deleteSurroundingText(word.length(), 0);
                 ic.commitText(fix + " ", 1);
                 engine.learn(fix, engineLang());
+                if (prevWord != null) engine.learnBigram(prevWord, fix, engineLang());
+                // تسجيل التراجع: الحذف بعد التصحيح يعيد الكلمة الأصلية
+                undoCorrected = fix;
+                undoOriginal = word;
                 lastWasSpace = true;
                 lastSpaceAt = now;
                 updateSuggestions();
                 return;
             }
         }
-        // تعلم الكلمة المكتوبة
+        // تعلم الكلمة المكتوبة + ثنائيتها
         if (isLetterMode() && word.length() >= 2 && engine.known(word, engineLang())) {
             engine.learn(word, engineLang());
+            if (prevWord != null) engine.learnBigram(prevWord, word, engineLang());
         }
 
         // نقطة تلقائية بضغطتين متتاليتين على المسافة
@@ -727,6 +823,7 @@ public class ImeService extends InputMethodService
     @Override
     public void onText(String t) {
         playSound();
+        undoCorrected = null; undoOriginal = null;
         InputConnection ic = getCurrentInputConnection();
         if (ic != null && t != null && t.length() > 0) ic.commitText(t, 1);
         lastWasSpace = false;
@@ -812,6 +909,10 @@ public class ImeService extends InputMethodService
             kv.setShiftLock(true);
         } else if (k.code == Key.CODE_LANG) {
             showLanguagePicker();
+        } else if (k.code == Key.CODE_MODE_NUM) {
+            // ضغط مطول على ؟١٢٣ يفتح لوحة الأرقام الكاملة (لوحة أرقام الهاتف)
+            mode = MODE_NUMPAD; shiftOn = false; shiftLock = false;
+            refreshLayout(); updateEnterLabel();
         }
     }
 
@@ -848,6 +949,22 @@ public class ImeService extends InputMethodService
 
     private void handleBackspace(InputConnection ic) {
         if (ic == null) return;
+
+        // تراجع عن التصحيح التلقائي: حذف فوراً بعد التصحيح يعيد الكلمة الأصلية
+        if (undoCorrected != null) {
+            int total = undoCorrected.length() + 1; // كلمة + مسافة
+            CharSequence before = ic.getTextBeforeCursor(total, 0);
+            if (before != null && before.length() == total && before.charAt(0) == ' '
+                    && before.toString().substring(1).equals(undoCorrected)) {
+                ic.deleteSurroundingText(total, 0);
+                ic.commitText(undoOriginal, 1);
+                undoCorrected = null; undoOriginal = null;
+                updateSuggestions();
+                return;
+            }
+            undoCorrected = null; undoOriginal = null;
+        }
+
         // دعم حذف الإيموجي (أزواج البدائل) بشكل صحيح
         CharSequence before = ic.getTextBeforeCursor(2, 0);
         int n = 1;
@@ -875,8 +992,29 @@ public class ImeService extends InputMethodService
         }
         if (!done) sendDownUpKeyEvents(android.view.KeyEvent.KEYCODE_ENTER);
         lastWasSpace = false;
+        undoCorrected = null; undoOriginal = null;
         autoCapAfterSentence();
         updateSuggestions();
+    }
+
+    /** إدخال نتيجة التعرف الصوتي في المؤشر (تستدعيه VoiceInputActivity — نفس العملية والخيط) */
+    public void commitVoiceResult(String text) {
+        if (text == null || text.isEmpty()) return;
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            ic.commitText(text, 1);
+            lastWasSpace = false;
+            updateSuggestions();
+        }
+    }
+
+    /** فتح نافذة الإدخال الصوتي فوق الحقل */
+    private void handleVoice() {
+        try {
+            Intent intent = new Intent(this, VoiceInputActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            startActivity(intent);
+        } catch (Exception ignored) {}
     }
 
     private void playSound() {

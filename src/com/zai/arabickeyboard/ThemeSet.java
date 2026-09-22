@@ -49,6 +49,21 @@ public class ThemeSet {
     /** فهرس الثيم الافتراضي (هوية DRS) */
     public static final int DEFAULT_PRESET = 4;
 
+    /** ألوان تمييز مخصصة يختارها المستخدم (تُطبّق على أي ثيم) */
+    public static final int[] ACCENT_COLORS = {
+            0xFF1A73E8,   // 1 أزرق
+            0xFF7C4DFF,   // 2 بنفسجي
+            0xFF00BCD4,   // 3 سماوي
+            0xFF34D399,   // 4 أخضر
+            0xFFFFC93A,   // 5 ذهبي
+            0xFFFF7043,   // 6 برتقالي
+            0xFFD81B60,   // 7 وردي
+            0xFFE53935    // 8 أحمر
+    };
+    public static final String[] ACCENT_NAMES = {
+            "أزرق", "بنفسجي", "سماوي", "أخضر", "ذهبي", "برتقالي", "وردي", "أحمر"
+    };
+
     private static int shade(int c, float f) {
         int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
         r = Math.max(0, Math.min(255, (int) (r * f)));
@@ -57,7 +72,22 @@ public class ThemeSet {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
-    /** ترجمة اختيار المستخدم إلى ثيم فعلي */
+    /** ترجمة اختيار المستخدم إلى ثيم فعلي (مع لون تمييز مخصص اختياري) */
+    public static ThemeSet resolve(int preset, boolean systemNight, int accent) {
+        ThemeSet t = resolve(preset, systemNight);
+        if (accent >= 1 && accent <= ACCENT_COLORS.length) {
+            applyAccent(t, ACCENT_COLORS[accent - 1]);
+        }
+        return t;
+    }
+
+    /** تطبيق لون تمييز مخصص على ثيم جاهز */
+    private static void applyAccent(ThemeSet t, int action) {
+        t.keyBgAction = action;
+        t.keyBgActionPressed = shade(action, t.dark ? 0.8f : 0.85f);
+        t.keyTextAction = isGold(action) ? 0xFF332600 : 0xFFFFFFFF;
+        t.stripWord = t.dark ? shade(action, 1.25f) : action;
+    }
     public static ThemeSet resolve(int preset, boolean systemNight) {
         if (preset < 0 || preset >= NAMES.length) preset = DEFAULT_PRESET;
         if (preset == 0) return systemNight ? dark(0xFF1B1D21, 0xFF35383D, 0xFF7C4DFF, false)

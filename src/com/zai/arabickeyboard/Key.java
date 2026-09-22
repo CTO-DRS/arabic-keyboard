@@ -35,6 +35,8 @@ public class Key {
     public static final int CODE_ARR_U = -20;     // سهم أعلى
     public static final int CODE_ARR_D = -21;     // سهم أسفل
     public static final int CODE_EDIT = -22;      // لوحة تحرير النص
+    public static final int CODE_NUMPAD = -23;    // لوحة الأرقام الكاملة
+    public static final int CODE_VOICE = -24;     // الإدخال الصوتي
 
     public String label;        // النص المعروض عادي
     public String text;         // النص المُدخل عادي

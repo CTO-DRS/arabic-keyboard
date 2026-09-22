@@ -173,6 +173,9 @@ public class MainActivity extends Activity {
         addSwitch(typingCard, R.string.sw_double_space, prefs.doubleSpace, new SwitchListener() {
             @Override public void on(boolean b) { prefs.setDoubleSpace(b); }
         });
+        addSwitch(typingCard, R.string.sw_next_word, prefs.nextWord, new SwitchListener() {
+            @Override public void on(boolean b) { prefs.setNextWord(b); }
+        });
         addCard(typingCard);
 
         // ===== الصوت والاهتزاز =====
@@ -201,6 +204,62 @@ public class MainActivity extends Activity {
         }, prefs.oneHanded, new IntListener() {
             @Override public void on(int i) { prefs.setOneHanded(i); }
         }));
+        addSwitch(layoutCard, R.string.sw_voice, prefs.voice, new SwitchListener() {
+            @Override public void on(boolean b) { prefs.setVoice(b); }
+        });
+        addSwitch(layoutCard, R.string.sw_arabic_digits, prefs.arabicDigits, new SwitchListener() {
+            @Override public void on(boolean b) { prefs.setArabicDigits(b); }
+        });
+
+        // ===== منتقي لون التمييز =====
+        layoutCard.addView(label(R.string.label_accent_color, 14, R.color.text_sub, false));
+        LinearLayout accentRow = new LinearLayout(this);
+        accentRow.setOrientation(LinearLayout.HORIZONTAL);
+        accentRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        // خيار "افتراضي الثيم"
+        TextView auto = new TextView(this);
+        auto.setText(R.string.accent_auto);
+        auto.setTextSize(12);
+        auto.setPadding(dp(12), dp(7), dp(12), dp(7));
+        auto.setClickable(true);
+        GradientDrawable autoBg = new GradientDrawable();
+        autoBg.setCornerRadius(dp(16));
+        autoBg.setColor(prefs.accent == 0 ? 0xFF243055 : 0x00000000);
+        autoBg.setStroke(dp(1), prefs.accent == 0 ? 0xFF7C4DFF : 0xFF3A4470);
+        auto.setBackground(autoBg);
+        auto.setTextColor(prefs.accent == 0 ? 0xFFB388FF : 0xFF9AA3D0);
+        auto.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                prefs.setAccent(0);
+                buildSections();
+            }
+        });
+        accentRow.addView(auto);
+
+        // دوائر الألوان الثمانية
+        for (int i = 1; i <= ThemeSet.ACCENT_COLORS.length; i++) {
+            final int idx = i;
+            View dot = new View(this);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(ThemeSet.ACCENT_COLORS[i - 1]);
+            g.setStroke(prefs.accent == idx ? dp(2) : dp(1),
+                    prefs.accent == idx ? 0xFFFFFFFF : 0x33000000);
+            dot.setBackground(g);
+            dot.setClickable(true);
+            dot.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    prefs.setAccent(idx);
+                    buildSections();
+                }
+            });
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(26), dp(26));
+            dlp.setMargins(dp(8), dp(8), dp(4), dp(4));
+            accentRow.addView(dot, dlp);
+        }
+        layoutCard.addView(accentRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addCard(layoutCard);
 
         // ===== القاموس الذكي =====

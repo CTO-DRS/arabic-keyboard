@@ -11,7 +11,7 @@
     <string name="act_go">اذهب</string>
 
     <string name="header_title">DRS Smart Keyboard</string>
-    <string name="header_sub">لوحة مفاتيح ذكية متكاملة: ست لغات، تنبؤ بالكلمات وتصحيح تلقائي، حافظة ذكية، لوحة تحرير نص، إيموجي مصنّف، و12 ثيماً قابلة للتخصيص</string>
+    <string name="header_sub">لوحة مفاتيح ذكية متكاملة: ست لغات، تنبؤ بالكلمات والكلمة التالية، تصحيح تلقائي مع تراجع، إدخال صوتي، حافظة بتثبيت، لوحة تحرير نص، إيموجي مصنّف، و12 ثيماً بألوان تمييز مخصصة</string>
 
     <string name="card_status_title">حالة لوحة المفاتيح</string>
     <string name="btn_enable">١. تفعيل اللوحة في إعدادات النظام</string>
@@ -22,10 +22,22 @@
 
     <!-- الألواح المنبثقة -->
     <string name="clip_title">الحافظة</string>
-    <string name="clip_clear">مسح الكل</string>
-    <string name="clip_empty">لا توجد عناصر منسوخة بعد — انسخ نصاً من أي تطبيق وسيظهر هنا.</string>
+    <string name="clip_clear">مسح السجل</string>
+    <string name="clip_empty">لا توجد عناصر منسوخة بعد — انسخ نصاً من أي تطبيق وسيظهر هنا. اضغط مطولاً على أي عنصر لتثبيته.</string>
     <string name="emoji_no_recent">لم تستخدم أي إيموجي بعد</string>
     <string name="pick_language">اختر اللغة</string>
+
+    <!-- الإدخال الصوتي -->
+    <string name="voice_listening">أنا أسمع… تحدث الآن</string>
+    <string name="voice_speaking">أتحدث…</string>
+    <string name="voice_processing">جارٍ التحليل…</string>
+    <string name="voice_cancel_hint">المس أي مكان للإلغاء</string>
+    <string name="voice_done">تم الإدخال ✔</string>
+    <string name="voice_copied">التعرف الصوتي انتهى — النص منسوخ في الحافظة</string>
+    <string name="voice_unavailable">التعرف الصوتي غير متوفر على هذا الجهاز</string>
+    <string name="voice_no_match">لم أسمع شيئاً واضحاً — حاول مرة أخرى</string>
+    <string name="voice_no_permission">صلاحية الميكروفون غير ممنوحة</string>
+    <string name="voice_error">تعذر التعرف على الكلام</string>
 
     <!-- الإعدادات -->
     <string name="card_settings_title">الإعدادات</string>
@@ -37,11 +49,16 @@
     <string name="sw_numrow">إظهار صف الأرقام دائماً فوق الحروف</string>
     <string name="sw_autocap">حرف كبير تلقائي في اللغات اللاتينية</string>
     <string name="sw_double_space">نقطة تلقائية بضغطتين على المسافة</string>
+    <string name="sw_next_word">التنبؤ بالكلمة التالية (من ثنائيات الكلمات)</string>
+    <string name="sw_voice">زر الإدخال الصوتي (المايكروفون)</string>
+    <string name="sw_arabic_digits">أرقام عربية-هندية في لوحة الأرقام (٠١٢٣)</string>
     <string name="section_sound">الصوت والاهتزاز</string>
     <string name="sw_sound">صوت عند الضغط على الأزرار</string>
     <string name="sw_haptic">اهتزاز عند الضغط على الأزرار</string>
     <string name="section_layout">التنسيق</string>
     <string name="label_height">حجم المفاتيح</string>
+    <string name="label_accent_color">لون التمييز (يُطبّق على أي ثيم)</string>
+    <string name="accent_auto">افتراضي الثيم</string>
     <string name="h_small">صغير</string>
     <string name="h_medium">متوسط</string>
     <string name="h_large">كبير</string>
@@ -58,8 +75,8 @@
     <string name="try_hint">اكتب هنا بالعربية أو الإنجليزية…</string>
 
     <string name="about_title">حول التطبيق</string>
-    <string name="about_version">DRS Smart Keyboard — الإصدار 2.0</string>
-    <string name="about_body">لوحة مفاتيح عربية ذكية مبنية بحب: عربي كامل مع الحركات، ست لغات، تنبؤ ذكي، حافظة، تحرير نص، إيموجي مصنّف، و12 ثيماً.</string>
+    <string name="about_version">DRS Smart Keyboard — الإصدار 2.1</string>
+    <string name="about_body">لوحة مفاتيح عربية ذكية مبنية بحب: عربي كامل بالتطبيع الذكي والحركات، ست لغات، تنبؤ بالكلمات والكلمة التالية، تصحيح تلقائي قابل للتراجع، إدخال صوتي، حافظة بتثبيت، لوحة أرقام كاملة، تحرير نص، إيموجي مصنّف، و12 ثيماً بثمانية ألوان تمييز.</string>
 
-    <string name="footer_tips">نصائح: اضغط مطولاً على ⇧ للقفل الدائم — اضغط مطولاً على أي حرف لعرض البدائل — اسحب على المسافة لتحريك المؤشر — اضغط مطولاً على زر اللغة لاختيار اللغة من قائمة — أيقونة الحافظة في شريط الاقتراحات تعرض ما نسخته، وأيقونة القلم تفتح أدوات التحرير.</string>
+    <string name="footer_tips">نصائح: اضغط مطولاً على ⇧ للقفل — على أي حرف لعرض التشكيل والبدائل — على ؟١٢٣ لفتح لوحة الأرقام الكاملة — اسحب على المسافة لتحريك المؤشر — الحذف بعد التصحيح التلقائي يعيد كلمتك الأصلية — اضغط مطولاً على عناصر الحافظة لتثبيتها — الماييكروفون يكتب ما تنطقه مباشرة.</string>
 </resources>

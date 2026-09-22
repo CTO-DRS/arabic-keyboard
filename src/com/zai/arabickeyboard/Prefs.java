@@ -15,6 +15,10 @@ public class Prefs {
     public boolean autoCorrect = true;  // تصحيح تلقائي عند الضغط على المسافة
     public int keyHeight = 1;           // 0 صغير، 1 متوسط، 2 كبير
     public int oneHanded = 0;           // 0 وسط، 1 يمين، 2 يسار
+    public boolean voice = true;        // زر الإدخال الصوتي
+    public boolean arabicDigits = false;// أرقام عربية-هندية في لوحة الأرقام
+    public int accent = 0;              // لون التمييز: 0 افتراضي الثيم، 1..8
+    public boolean nextWord = true;     // التنبؤ بالكلمة التالية
 
     private final SharedPreferences sp;
 
@@ -46,6 +50,10 @@ public class Prefs {
         autoCorrect = sp.getBoolean("auto_correct", true);
         keyHeight = sp.getInt("key_height", 1);
         oneHanded = sp.getInt("one_handed", 0);
+        voice = sp.getBoolean("voice", true);
+        arabicDigits = sp.getBoolean("arabic_digits", false);
+        accent = sp.getInt("accent", 0);
+        nextWord = sp.getBoolean("next_word", true);
     }
 
     public void setThemePreset(int t) {
@@ -96,5 +104,25 @@ public class Prefs {
     public void setOneHanded(int m) {
         oneHanded = m;
         sp.edit().putInt("one_handed", m).apply();
+    }
+
+    public void setVoice(boolean b) {
+        voice = b;
+        sp.edit().putBoolean("voice", b).apply();
+    }
+
+    public void setArabicDigits(boolean b) {
+        arabicDigits = b;
+        sp.edit().putBoolean("arabic_digits", b).apply();
+    }
+
+    public void setAccent(int a) {
+        accent = a;
+        sp.edit().putInt("accent", a).apply();
+    }
+
+    public void setNextWord(boolean b) {
+        nextWord = b;
+        sp.edit().putBoolean("next_word", b).apply();
     }
 }
