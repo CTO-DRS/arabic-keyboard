@@ -346,9 +346,10 @@ public final class Layouts {
                 f("تم", Key.CODE_BACK_TO_ABC, 1.3f)
         ));
         rows.add(row(
-                f("←", Key.CODE_ARR_L, 1.2f),
-                space("اسحب المؤشر", 4f),
-                f("→", Key.CODE_ARR_R, 1.2f)
+                f("←", Key.CODE_ARR_L, 1.1f),
+                space("اسحب المؤشر", 3.4f),
+                f("→", Key.CODE_ARR_R, 1.1f),
+                enter(1.4f)
         ));
         return rows;
     }

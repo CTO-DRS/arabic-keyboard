@@ -154,23 +154,32 @@ public final class SelfTest {
         try {
             int rows = 0, keys = 0;
             String bad = null;
-            for (int lang = 0; lang < Layouts.LANG_COUNT; lang++) {
+            // ١) اللغات الست — عقد كامل: ٤ صفوف على الأقل + مسافة + إدخال + مسح
+            for (int lang = 0; lang < Layouts.LANG_COUNT && bad == null; lang++) {
                 List<Row> ls = Layouts.get(lang, lang, true, true, false);
-                String e = validate(ls);
-                if (e != null) { bad = Layouts.LANG_NAMES[lang] + ": " + e; break; }
+                bad = wrap(Layouts.LANG_NAMES[lang], validate(ls, true, true, 4));
                 rows += ls.size();
                 for (Row row : ls) keys += row.keys.size();
             }
-            if (bad == null) {
-                List<Row>[] extras = new List[]{
-                        Layouts.sym1(0), Layouts.sym2(0), Layouts.edit(0),
-                        Layouts.numpad(0, false), Layouts.numpad(0, true), Layouts.emojiNav(0)};
-                for (List<Row> ls : extras) {
-                    String e = validate(ls);
-                    if (e != null) { bad = e; break; }
-                    rows += ls.size();
-                    for (Row row : ls) keys += row.keys.size();
-                }
+            // ٢) الألواح المساعدة — لكل لوحة عقد يناسب وظيفتها:
+            //    الرموز والتحرير: تخطيط كامل — الأرقام: إدخال ومسح بلا مسافة — شريط الإيموجي: صف واحد فيه مسح
+            String[][] contract = {
+                    {"الرموز ١",       "1", "1", "4"},
+                    {"الرموز ٢",       "1", "1", "4"},
+                    {"لوحة التحرير",    "1", "1", "4"},
+                    {"لوحة الأرقام",    "0", "1", "4"},
+                    {"الأرقام العربية", "0", "1", "4"},
+                    {"شريط الإيموجي",   "0", "0", "1"}
+            };
+            List<Row>[] panels = new List[]{Layouts.sym1(0), Layouts.sym2(0), Layouts.edit(0),
+                    Layouts.numpad(0, false), Layouts.numpad(0, true), Layouts.emojiNav(0)};
+            for (int i = 0; i < panels.length && bad == null; i++) {
+                List<Row> ls = panels[i];
+                bad = wrap(contract[i][0], validate(ls,
+                        contract[i][1].equals("1"), contract[i][2].equals("1"),
+                        Integer.parseInt(contract[i][3])));
+                rows += ls.size();
+                for (Row row : ls) keys += row.keys.size();
             }
             if (bad != null) {
                 r.add(new Result("سلامة التخطيطات", FAIL, bad));
@@ -183,20 +192,30 @@ public final class SelfTest {
         }
     }
 
-    /** التحقق من بنية تخطيط: صفوف كافية، أوزان موجبة، أزرار أساسية موجودة */
-    private static String validate(List<Row> ls) {
-        if (ls == null || ls.size() < 4) return "عدد صفوف غير كافٍ";
+    /** يضيف اسم اللوحة إلى رسالة الخطأ إن وُجدت */
+    private static String wrap(String name, String err) {
+        return err == null ? null : name + ": " + err;
+    }
+
+    /** التحقق من بنية تخطيط: صفوف كافية، أوزان موجبة، الأزرار المطلوبة موجودة —
+     *  يعيد رسالة دقيقة تسمي الزر الناقص ورقم الصف، أو null إن كان سليماً */
+    private static String validate(List<Row> ls, boolean needSpace, boolean needEnter, int minRows) {
+        if (ls == null || ls.size() < minRows)
+            return "عدد صفوف غير كافٍ (" + (ls == null ? 0 : ls.size()) + " بدلاً من " + minRows + ")";
         boolean hasBack = false, hasEnter = false, hasSpace = false;
-        for (Row row : ls) {
-            if (row.keys.isEmpty()) return "صف فارغ";
+        for (int i = 0; i < ls.size(); i++) {
+            Row row = ls.get(i);
+            if (row.keys.isEmpty()) return "الصف " + (i + 1) + " فارغ";
             for (Key k : row.keys) {
-                if (k.weight <= 0) return "وزن زر غير صالح";
+                if (k.weight <= 0) return "وزن زر غير صالح في الصف " + (i + 1);
                 if (k.code == Key.CODE_BACKSPACE) hasBack = true;
                 if (k.code == Key.CODE_ENTER) hasEnter = true;
                 if (k.type == Key.SPACE) hasSpace = true;
             }
         }
-        if (!hasBack || !hasEnter || !hasSpace) return "أزرار أساسية مفقودة";
+        if (!hasBack) return "أزرار أساسية مفقودة: زر المسح Backspace";
+        if (needEnter && !hasEnter) return "أزرار أساسية مفقودة: زر الإدخال Enter";
+        if (needSpace && !hasSpace) return "أزرار أساسية مفقودة: زر المسافة";
         return null;
     }
 
