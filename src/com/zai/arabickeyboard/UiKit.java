@@ -111,6 +111,34 @@ public final class UiKit {
         return g;
     }
 
+    // ==================== الحواف الزجاجية المضيئة (v2.8) ====================
+
+    /** الشريط العلوي: زجاج فاتح بحد أبيض متدرج الإضاءة (ساطع أعلى ← خافت أسفل)
+     *  + توهج بنفسجي هادئ حول الحواف + انعكاس داخلي علوي */
+    public static GlassEdge glassEdgeTop(Context c, float radiusDp) {
+        return new GlassEdge(dp(c, radiusDp),
+                0x26FFFFFF, 0x0DFFFFFF,           // تعبئة الزجاج
+                0x8CFFFFFF, 0x38FFFFFF, 0x12FFFFFF, // الحد المتدرج
+                0xFF9D7BFF, 0.55f, dp(c, 1.2f));  // توهج بنفسجي هادئ
+    }
+
+    /** الشريط السفلي: زجاج أعمق بحد مضيء يتدرج نحو البنفسجي أسفل الحافة
+     *  + توهج بنفسجي أوضح يمنح إحساس الطفو */
+    public static GlassEdge glassEdgeNav(Context c, float radiusDp) {
+        return new GlassEdge(dp(c, radiusDp),
+                0xD9182042, 0xA80D1329,           // تعبئة أعمق لتباين أعلى
+                0x9CFFFFFF, 0x4D9D7BFF, 0x309D7BFF, // أبيض أعلى ← بنفسجي أسفل
+                0xFF7C5CFF, 0.75f, dp(c, 1.3f));
+    }
+
+    /** كبسولة التبويب النشط: حد بنفسجي ساطع متدرج + توهج ناعم حولها */
+    public static GlassEdge glassEdgeCapsule(Context c, float radiusDp) {
+        return new GlassEdge(dp(c, radiusDp),
+                0x5E7C5CFF, 0x2E5B3FE0,           // تعبئة بنفسجية شفافة
+                0xB49D7BFF, 0x557C5CFF, 0x2E7C5CFF,
+                0xFF9D7BFF, 0.9f, dp(c, 1.2f));
+    }
+
     /** يضيف Ripple + توهج ضغط حول أي عنصر بخلفية جاهزة */
     public static void ripple(View v, android.graphics.drawable.Drawable bg,
                               int rippleColor, float radiusDp) {

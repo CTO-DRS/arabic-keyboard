@@ -103,11 +103,11 @@ public class MainActivity extends Activity {
         rootFrame.addView(root, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // ===== الشريط العلوي — بطاقة زجاجية بحد مضيء وشعار متوهج =====
+        // ===== الشريط العلوي — زجاج بحافة مضيئة متدرجة + توهج + انعكاس داخلي =====
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setBackground(UiKit.glass(this, 28));
+        header.setBackground(UiKit.glassEdgeTop(this, 30));
         header.setPadding(dp(14), dp(12), dp(14), dp(12));
 
         // شعار متوهج: هالة شعاعية + مربع متدرج + أيقونة لوحة مفاتيح مرسومة
@@ -157,17 +157,18 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         root.addView(content, cLp);
 
-        // ===== شريط التنقل السفلي — قرص زجاجي عائم بحد مضيء =====
+        // ===== شريط التنقل السفلي — قرص زجاجي عائم بحافة مضيئة متدرجة =====
         FrameLayout navWrap = new FrameLayout(this);
         navWrap.setPadding(dp(10), dp(6), dp(10), dp(10));
+        // منطقة الأمان: لا يغطي القرص شريط النظام (إيماءات/أزرار) على أي جهاز
+        navWrap.setOnApplyWindowInsetsListener((v, insets) -> {
+            int sysBottom = insets.getSystemWindowInsetBottom();
+            v.setPadding(dp(10), dp(6), dp(10), dp(10) + sysBottom);
+            return insets.consumeSystemWindowInsets();
+        });
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
-        GradientDrawable nbg = new GradientDrawable();
-        nbg.setOrientation(GradientDrawable.Orientation.TL_BR);
-        nbg.setColors(new int[]{0xD9182042, 0xA80D1329});
-        nbg.setCornerRadius(dp(28));
-        nbg.setStroke(dp(1), 0x3CFFFFFF);
-        nav.setBackground(nbg);
+        nav.setBackground(UiKit.glassEdgeNav(this, 30));
         nav.setPadding(dp(6), dp(7), dp(6), dp(7));
         for (int i = 0; i < TAB_COUNT; i++) {
             navItems[i] = navItem(i);
@@ -223,17 +224,8 @@ public class MainActivity extends Activity {
         for (int i = 0; i < TAB_COUNT; i++) {
             LinearLayout item = navItems[i];
             boolean on = i == active;
-            // كبسولة زجاجية متوهجة للتبويب النشط
-            GradientDrawable ib = new GradientDrawable();
-            ib.setOrientation(GradientDrawable.Orientation.TL_BR);
-            if (on) {
-                ib.setColors(new int[]{0x527C5CFF, 0x2E5B3FE0});
-                ib.setStroke(dp(1), 0x669D7BFF);
-            } else {
-                ib.setColors(new int[]{0x00000000, 0x00000000});
-            }
-            ib.setCornerRadius(dp(21));
-            item.setBackground(ib);
+            // كبسولة التبويب النشط: حد بنفسجي متدرج الإضاءة + توهج ناعم
+            item.setBackground(on ? UiKit.glassEdgeCapsule(this, 21) : null);
             TextView label = (TextView) item.getTag();
             label.setTextColor(on ? 0xFFD4C6FF : UiKit.TEXT_FAINT);
             ((Icon) item.getChildAt(0)).setActive(on, 0xFFD4C6FF, UiKit.TEXT_FAINT);
