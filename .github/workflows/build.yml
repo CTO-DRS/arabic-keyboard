@@ -36,12 +36,5 @@ jobs:
         with:
           name: DRS-Smart-Keyboard-APK
           path: dist/Arabic-Keyboard.apk
-
-      - name: Create GitHub Release (on version tags)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/Arabic-Keyboard.apk
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# ملاحظة: نشر الإصدارات الرسمية يتم بمفتاح التوقيع المحلي الثابت (وليس CI)
+# لأن CI يولّد مفتاحاً جديداً في كل تشغيل — راجع صفحة Releases
