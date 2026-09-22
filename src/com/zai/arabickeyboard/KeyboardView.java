@@ -50,6 +50,24 @@ public class KeyboardView extends View {
     private boolean shiftLocked;
     private String enterLabel;
 
+    // شريط الاقتراحات
+    public interface StripListener {
+        void onStripAction(int action, int index);
+    }
+    public static final int STRIP_CLIP = 0;
+    public static final int STRIP_EDIT = 1;
+    public static final int STRIP_WORD = 2;
+
+    private StripListener stripListener;
+    private final List<String> suggestions = new ArrayList<>();
+    private boolean stripVisible;
+    private int stripH;
+    private int pressedSlot = -1;
+
+    // الوضع بيد واحدة: 0 وسط، 1 يمين، 2 يسار
+    private int oneHanded;
+    private float kbOffsetX, kbWidth;
+
     // أبعاد
     private int baseKeyH;
     private int keyH, rowGap, keyGap, sidePad, topPad, bottomPad, radius;
@@ -76,6 +94,8 @@ public class KeyboardView extends View {
     private Runnable repeatRunnable;
     private int repeatCount;
     private boolean longPressedFired;
+    private boolean stripTouched;
+    private int stripDownSlot = -1;
 
     // نوافذ منبثقة
     private PopupWindow previewPopup;
@@ -98,12 +118,13 @@ public class KeyboardView extends View {
         topPad = res(R.dimen.kb_top_pad);
         bottomPad = res(R.dimen.kb_bottom_pad);
         radius = dp(9);
+        stripH = dp(40);
 
         textPaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         hintPaint.setTypeface(Typeface.DEFAULT);
         hintPaint.setTextAlign(Paint.Align.RIGHT);
 
-        if (theme == null) theme = ThemeSet.light(ThemeSet.ACCENTS[0]);
+        if (theme == null) theme = ThemeSet.resolve(ThemeSet.DEFAULT_PRESET, false);
     }
 
     private int res(int id) { return getResources().getDimensionPixelSize(id); }
@@ -113,8 +134,11 @@ public class KeyboardView extends View {
 
     public void setListener(Listener l) { listener = l; }
 
+    public void setStripListener(StripListener l) { stripListener = l; }
+
     public void setTheme(ThemeSet t) {
         theme = t;
+        bgPaint = null; // إعادة بناء تدرج الخلفية للثيم الجديد
         invalidate();
     }
 
@@ -151,6 +175,30 @@ public class KeyboardView extends View {
         invalidate();
     }
 
+    /** الوضع بيد واحدة: 0 وسط، 1 يمين، 2 يسار */
+    public void setOneHanded(int mode) {
+        if (oneHanded == mode) return;
+        oneHanded = mode;
+        if (getWidth() > 0) computeLayout(getWidth());
+        invalidate();
+    }
+
+    /** إظهار/إخفاء شريط الاقتراحات */
+    public void setStripVisible(boolean v) {
+        if (stripVisible == v) return;
+        stripVisible = v;
+        if (getWidth() > 0) computeLayout(getWidth());
+        requestLayout();
+        invalidate();
+    }
+
+    /** تحديث كلمات الاقتراح (حتى 3) */
+    public void setSuggestions(List<String> s) {
+        suggestions.clear();
+        if (s != null) suggestions.addAll(s);
+        if (stripVisible) invalidate();
+    }
+
     public void cancelAll() {
         stopRepeat();
         handler.removeCallbacksAndMessages(null);
@@ -162,7 +210,7 @@ public class KeyboardView extends View {
     public int getDesiredHeight() {
         int n = rows.size();
         if (n == 0) return 0;
-        return topPad + bottomPad + n * keyH + (n - 1) * rowGap;
+        return (stripVisible ? stripH : 0) + topPad + bottomPad + n * keyH + (n - 1) * rowGap;
     }
 
     // ==================== القياس والتخطيط ====================
@@ -183,14 +231,22 @@ public class KeyboardView extends View {
     private void computeLayout(int w) {
         laid.clear();
         if (rows.isEmpty() || w <= 0) return;
-        float y = topPad;
+        // حساب منطقة المفاتيح حسب الوضع بيد واحدة
+        if (oneHanded == 0) {
+            kbOffsetX = 0;
+            kbWidth = w;
+        } else {
+            kbWidth = w * 0.86f;
+            kbOffsetX = (oneHanded == 1) ? w - kbWidth : 0;
+        }
+        float y = topPad + (stripVisible ? stripH : 0);
         for (Row row : rows) {
             int n = row.keys.size();
             float total = 0;
             for (Key k : row.keys) total += k.weight;
-            float avail = w - 2 * sidePad - (n - 1) * (float) keyGap;
+            float avail = kbWidth - 2 * sidePad - (n - 1) * (float) keyGap;
             float unit = avail / total;
-            float x = sidePad;
+            float x = kbOffsetX + sidePad;
             List<LaidKey> lr = new ArrayList<>(n);
             for (Key k : row.keys) {
                 LaidKey lk = new LaidKey();
@@ -215,12 +271,127 @@ public class KeyboardView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        canvas.drawColor(theme.kbBg);
+        drawBackground(canvas);
+        if (stripVisible) drawStrip(canvas);
         for (List<LaidKey> lr : laid) {
             for (LaidKey lk : lr) {
                 drawKey(canvas, lk);
             }
         }
+    }
+
+    private Paint bgPaint;
+    private int bgPaintHeight = -1;
+
+    private void drawBackground(Canvas canvas) {
+        if (theme.gradient) {
+            if (bgPaint == null || bgPaintHeight != getHeight()) {
+                bgPaintHeight = getHeight();
+                bgPaint = new Paint();
+                android.graphics.LinearGradient lg = new android.graphics.LinearGradient(
+                        0, 0, 0, getHeight(),
+                        theme.kbBgTop, theme.kbBg,
+                        android.graphics.Shader.TileMode.CLAMP);
+                bgPaint.setShader(lg);
+            }
+            canvas.drawRect(0, 0, getWidth(), getHeight(), bgPaint);
+        } else {
+            canvas.drawColor(theme.kbBg);
+        }
+    }
+
+    // ==================== شريط الاقتراحات ====================
+
+    private void drawStrip(Canvas canvas) {
+        int w = getWidth();
+        // خط فاصل سفلي خفيف
+        keyPaint.setColor(theme.dark ? 0x22FFFFFF : 0x22000000);
+        canvas.drawRect(sidePad, stripH - dp(1), w - sidePad, stripH, keyPaint);
+
+        int iconW = dp(44);
+        int gap = dp(6);
+        int wordsStart = sidePad + iconW + gap;
+        int wordsEnd = w - sidePad - iconW - gap;
+        int slotW = (wordsEnd - wordsStart) / 3;
+
+        // أيقونة الحافظة (يسار)
+        drawClipboardIcon(canvas, sidePad + iconW / 2f, stripH / 2f, pressedSlot == 0);
+        // أيقونة التحرير (يمين)
+        drawEditIcon(canvas, w - sidePad - iconW / 2f, stripH / 2f, pressedSlot == 4);
+
+        // الكلمات
+        for (int i = 0; i < 3; i++) {
+            float sx = wordsStart + i * (float) slotW;
+            float ex = sx + slotW;
+            if (i == pressedSlot - 1) {
+                rectF.set(sx + dp(3), dp(5), ex - dp(3), stripH - dp(5));
+                keyPaint.setColor(theme.dark ? 0x30FFFFFF : 0x1A000000);
+                canvas.drawRoundRect(rectF, dp(8), dp(8), keyPaint);
+            }
+            if (i >= suggestions.size()) continue;
+            String word = suggestions.get(i);
+            if (word == null || word.isEmpty()) continue;
+            int color = (i == 0) ? (theme.stripWord != 0 ? theme.stripWord : theme.keyBgAction)
+                                 : theme.keyText;
+            textPaint.setColor(color);
+            float size = stripH * 0.40f;
+            textPaint.setTextSize(size);
+            float tw = textPaint.measureText(word);
+            float maxW = slotW - dp(10);
+            if (tw > maxW) {
+                // قص الكلمة الطويلة
+                while (word.length() > 1 && textPaint.measureText(word + "…") > maxW) {
+                    word = word.substring(0, word.length() - 1);
+                }
+                word = word + "…";
+                textPaint.setTextSize(size);
+            }
+            float cx = sx + slotW / 2f;
+            float baseline = stripH / 2f - (textPaint.ascent() + textPaint.descent()) / 2f;
+            canvas.drawText(word, cx, baseline, textPaint);
+            if (i == 0) {
+                // خط صغير أسفل الكلمة المرشحة
+                float uw = Math.min(textPaint.measureText(word), maxW);
+                keyPaint.setColor(color);
+                canvas.drawRect(cx - uw / 2f, stripH - dp(6), cx + uw / 2f, stripH - dp(4.5f), keyPaint);
+            }
+        }
+    }
+
+    private void drawClipboardIcon(Canvas canvas, float cx, float cy, boolean pressed) {
+        float w2 = dp(9), h2 = dp(11);
+        iconPaint.setColor(pressed ? theme.keyBgAction : theme.keyTextFunc);
+        iconPaint.setStyle(Paint.Style.STROKE);
+        iconPaint.setStrokeWidth(dp(1.7f));
+        rectF.set(cx - w2, cy - h2 * 0.8f, cx + w2, cy + h2);
+        canvas.drawRoundRect(rectF, dp(2.5f), dp(2.5f), iconPaint);
+        // مشبك الحافظة العلوي
+        rectF.set(cx - dp(4), cy - h2 - dp(1.5f), cx + dp(4), cy - h2 + dp(3.5f));
+        iconPaint.setStyle(Paint.Style.FILL);
+        canvas.drawRoundRect(rectF, dp(1.5f), dp(1.5f), iconPaint);
+    }
+
+    private void drawEditIcon(Canvas canvas, float cx, float cy, boolean pressed) {
+        // قلم مائل
+        float s = dp(6.5f);
+        iconPaint.setColor(pressed ? theme.keyBgAction : theme.keyTextFunc);
+        iconPaint.setStyle(Paint.Style.STROKE);
+        iconPaint.setStrokeWidth(dp(1.9f));
+        iconPaint.setStrokeCap(Paint.Cap.ROUND);
+        iconPaint.setStrokeJoin(Paint.Join.ROUND);
+        iconPath.reset();
+        iconPath.moveTo(cx - s * 0.7f, cy + s);
+        iconPath.lineTo(cx - s * 0.9f, cy + s * 1.2f);
+        iconPath.lineTo(cx - s * 0.95f, cy + s * 0.75f);
+        iconPath.lineTo(cx + s * 0.75f, cy - s * 0.9f);
+        iconPath.lineTo(cx + s * 0.05f, cy - s * 1.55f);
+        iconPath.lineTo(cx - s * 0.7f, cy + s);
+        iconPath.close();
+        canvas.drawPath(iconPath, iconPaint);
+        iconPath.reset();
+        iconPath.moveTo(cx - s * 0.35f, cy + s * 0.05f);
+        iconPath.lineTo(cx + s * 0.4f, cy - s * 0.7f);
+        canvas.drawPath(iconPath, iconPaint);
     }
 
     private int bgColorFor(LaidKey lk) {
@@ -425,15 +596,46 @@ public class KeyboardView extends View {
                 return true;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                onUp(ev.getActionMasked() == MotionEvent.ACTION_CANCEL);
+                onUp(ev.getActionMasked() == MotionEvent.ACTION_CANCEL, ev);
                 return true;
         }
         return super.onTouchEvent(ev);
     }
 
+    /** فهرس خانة الشريط عند نقطة: 0 حافظة، 1-3 كلمات، 4 تحرير، -1 لا شيء */
+    private int stripSlotAt(float x, float y) {
+        if (!stripVisible || y > stripH) return -1;
+        int w = getWidth();
+        int iconW = dp(44);
+        int gap = dp(6);
+        int wordsStart = sidePad + iconW + gap;
+        int wordsEnd = w - sidePad - iconW - gap;
+        if (x >= sidePad && x <= sidePad + iconW) return 0;
+        if (x >= wordsEnd && x <= w - sidePad) return 4;
+        if (x >= wordsStart && x < wordsEnd) {
+            int slotW = (wordsEnd - wordsStart) / 3;
+            int s = 1 + (int) ((x - wordsStart) / slotW);
+            return Math.max(1, Math.min(3, s));
+        }
+        return -1;
+    }
+
     private void onDown(MotionEvent ev) {
         pointerId = ev.getPointerId(0);
         cancelAll();
+        // منطقة شريط الاقتراحات
+        if (stripVisible && ev.getY() <= stripH) {
+            int slot = stripSlotAt(ev.getX(), ev.getY());
+            if (slot >= 0) {
+                stripTouched = true;
+                stripDownSlot = slot;
+                pressedSlot = slot;
+                invalidate();
+                pressFeedback();
+                return;
+            }
+        }
+        stripTouched = false;
         LaidKey k = findKey(ev.getX(), ev.getY());
         pointerId = ev.getPointerId(0);
         if (k == null) return;
@@ -457,6 +659,16 @@ public class KeyboardView extends View {
     }
 
     private void onMove(MotionEvent ev) {
+        if (stripTouched) {
+            int idx = ev.findPointerIndex(pointerId);
+            if (idx < 0) return;
+            int slot = stripSlotAt(ev.getX(idx), ev.getY(idx));
+            if (slot != pressedSlot) {
+                pressedSlot = slot;
+                invalidate();
+            }
+            return;
+        }
         if (touched == null) return;
         int idx = ev.findPointerIndex(pointerId);
         if (idx < 0) return;
@@ -502,8 +714,25 @@ public class KeyboardView extends View {
         }
     }
 
-    private void onUp(boolean cancelled) {
+    private void onUp(boolean cancelled, MotionEvent ev) {
         stopRepeat();
+        if (stripTouched) {
+            stripTouched = false;
+            int slot = stripDownSlot;
+            pressedSlot = -1;
+            stripDownSlot = -1;
+            invalidate();
+            if (!cancelled && slot >= 0 && stripListener != null
+                    && stripSlotAt(ev.getX(), ev.getY()) == slot) {
+                if (slot == 0) stripListener.onStripAction(STRIP_CLIP, -1);
+                else if (slot == 4) stripListener.onStripAction(STRIP_EDIT, -1);
+                else {
+                    int wi = slot - 1;
+                    if (wi < suggestions.size()) stripListener.onStripAction(STRIP_WORD, wi);
+                }
+            }
+            return;
+        }
         if (altPopup != null) {
             if (!cancelled && altSelected >= 0 && altSelected < altList.size() && listener != null) {
                 listener.onText(altList.get(altSelected));

@@ -22,6 +22,19 @@ public class Key {
     public static final int CODE_BACK_TO_ABC = -8;// عربي/ABC
     public static final int CODE_PAGE1 = -9;      // 123
     public static final int CODE_SPACE = -10;     // المسافة
+    // لوحة تحرير النص
+    public static final int CODE_SEL_ALL = -11;   // تحديد الكل
+    public static final int CODE_COPY = -12;      // نسخ
+    public static final int CODE_CUT = -13;       // قص
+    public static final int CODE_PASTE = -14;     // لصق
+    public static final int CODE_HOME = -15;      // بداية السطر
+    public static final int CODE_END = -16;       // نهاية السطر
+    public static final int CODE_DEL_WORD = -17;  // حذف كلمة
+    public static final int CODE_ARR_L = -18;     // سهم يسار
+    public static final int CODE_ARR_R = -19;     // سهم يمين
+    public static final int CODE_ARR_U = -20;     // سهم أعلى
+    public static final int CODE_ARR_D = -21;     // سهم أسفل
+    public static final int CODE_EDIT = -22;      // لوحة تحرير النص
 
     public String label;        // النص المعروض عادي
     public String text;         // النص المُدخل عادي

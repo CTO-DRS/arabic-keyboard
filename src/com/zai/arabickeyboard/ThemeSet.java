@@ -1,8 +1,13 @@
 package com.zai.arabickeyboard;
 
-/** لوحة ألوان لوحة المفاتيح مع دعم ألوان التمييز */
+/**
+ * نظام الثيمات الكامل — 12 ثيماً مسمّى بهوية DRS Smart:
+ * كحلي داكن بتوهج بنفسجي، سايبر، نيون، منتصف الليل، ذهبي ملكي، وردة ذهبية...
+ * كل ثيم يحدد كل الألوان + لون التمييز الخاص به.
+ */
 public class ThemeSet {
     public int kbBg;             // خلفية اللوحة
+    public int kbBgTop;          // أعلى التدرج (يساوي kbBg إن لا تدرج)
     public int keyBg;            // خلفية زر عادي
     public int keyBgFunc;        // خلفية زر وظيفي
     public int keyBgAction;      // خلفية زر التنفيذ (لون التمييز)
@@ -12,18 +17,37 @@ public class ThemeSet {
     public int keyText;          // لون نص الأزرار العادية
     public int keyTextFunc;      // لون نص الأزرار الوظيفية
     public int keyTextAction;    // لون نص زر التنفيذ
-    public int hintText;         // نصوص ثانوية (تلميحات المسافة/البدائل)
+    public int hintText;         // نصوص ثانوية
     public int popupBg;          // خلفية النوافذ المنبثقة
+    public int stripWord;        // لون كلمة الاقتراح الأولى (المرشّحة)
     public boolean dark;
+    public boolean gradient;     // تفعيل تدرج الخلفية
 
-    /** ألوان التمييز المتاحة */
-    public static final int[] ACCENTS = {
-            0xFF4285F4, // أزرق
-            0xFF26A69A, // فيروزي
-            0xFFAB47BC, // بنفسجي
-            0xFFFFB300, // ذهبي
-            0xFFEF5350  // أحمر
+    /** أسماء الثيمات (تظهر في الإعدادات) */
+    public static final String[] NAMES = {
+            "تلقائي", "نهاري", "ليلي", "AMOLED",
+            "DRS ذكي", "سايبر", "نيون", "منتصف الليل",
+            "وردة ذهبية", "غروب", "زمرد", "ملكي"
     };
+
+    /** ألوان معاينة صغيرة لكل ثيم (خلفية، مفاتيح، تمييز) */
+    public static final int[][] PREVIEW = {
+            {0xFFE9EBEF, 0xFFFFFFFF, 0xFF4285F4},   // 0 تلقائي
+            {0xFFE9EBEF, 0xFFFFFFFF, 0xFF1A73E8},   // 1 نهاري
+            {0xFF1B1D21, 0xFF35383D, 0xFF7C4DFF},   // 2 ليلي
+            {0xFF000000, 0xFF1A1C1E, 0xFF26A69A},   // 3 AMOLED
+            {0xFF0D1228, 0xFF1A2142, 0xFF7C4DFF},   // 4 DRS ذكي
+            {0xFF0A0F1E, 0xFF13204A, 0xFF00E5FF},   // 5 سايبر
+            {0xFF12081F, 0xFF241040, 0xFFE040FB},   // 6 نيون
+            {0xFF101418, 0xFF232A31, 0xFF4FC3F7},   // 7 منتصف الليل
+            {0xFFF9EEF2, 0xFFFFFFFF, 0xFFD81B60},   // 8 وردة ذهبية
+            {0xFF2A1220, 0xFF471E2E, 0xFFFF7043},   // 9 غروب
+            {0xFF0E1F18, 0xFF1B3A2C, 0xFF34D399},   // 10 زمرد
+            {0xFF1A1608, 0xFF2E280F, 0xFFFFC93A}    // 11 ملكي
+    };
+
+    /** فهرس الثيم الافتراضي (هوية DRS) */
+    public static final int DEFAULT_PRESET = 4;
 
     private static int shade(int c, float f) {
         int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
@@ -33,73 +57,93 @@ public class ThemeSet {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
-    /** pref: -1 تلقائي، 0 نهاري، 1 ليلي، 2 AMOLED — accentIdx: فهرس ACCENTS */
-    public static ThemeSet resolve(int pref, int accentIdx, boolean systemNight) {
-        int t = pref;
-        if (t < 0) t = systemNight ? 1 : 0;
-        int accent = ACCENTS[Math.max(0, Math.min(ACCENTS.length - 1, accentIdx))];
-        if (t == 0) return light(accent);
-        if (t == 2) return amoled(accent);
-        return dark(accent);
+    /** ترجمة اختيار المستخدم إلى ثيم فعلي */
+    public static ThemeSet resolve(int preset, boolean systemNight) {
+        if (preset < 0 || preset >= NAMES.length) preset = DEFAULT_PRESET;
+        if (preset == 0) return systemNight ? dark(0xFF1B1D21, 0xFF35383D, 0xFF7C4DFF, false)
+                                            : light(0xFFE9EBEF, 0xFFFFFFFF, 0xFF1A73E8, false);
+        switch (preset) {
+            case 1: return light(0xFFE9EBEF, 0xFFFFFFFF, 0xFF1A73E8, false);
+            case 2: return dark(0xFF1B1D21, 0xFF35383D, 0xFF7C4DFF, false);
+            case 3: return dark(0xFF000000, 0xFF1A1C1E, 0xFF26A69A, false);
+            case 4: return drsSmart();
+            case 5: return dark(0xFF0A0F1E, 0xFF13204A, 0xFF00E5FF, true);
+            case 6: return dark(0xFF12081F, 0xFF241040, 0xFFE040FB, true);
+            case 7: return dark(0xFF101418, 0xFF232A31, 0xFF4FC3F7, true);
+            case 8: return light(0xFFF9EEF2, 0xFFFFFFFF, 0xFFD81B60, false);
+            case 9: return dark(0xFF2A1220, 0xFF471E2E, 0xFFFF7043, true);
+            case 10: return dark(0xFF0E1F18, 0xFF1B3A2C, 0xFF34D399, true);
+            case 11: return dark(0xFF1A1608, 0xFF2E280F, 0xFFFFC93A, true);
+            default: return drsSmart();
+        }
     }
 
-    private static int accentText(int accent) {
-        // الذهبي يحتاج نصاً داكناً لسهولة القراءة
-        if (accent == ACCENTS[3]) return 0xFF332600;
-        return 0xFFFFFFFF;
+    /** الثيم الرئيسي: كحلي عميق بتوهج بنفسجي — هوية DRS Smart */
+    private static ThemeSet drsSmart() {
+        ThemeSet t = new ThemeSet();
+        t.dark = true;
+        t.gradient = true;
+        t.kbBg = 0xFF0D1228;
+        t.kbBgTop = 0xFF131A38;
+        t.keyBg = 0xFF1A2142;
+        t.keyBgFunc = 0xFF141A36;
+        t.keyBgAction = 0xFF7C4DFF;
+        t.keyBgPressed = 0xFF253060;
+        t.keyBgFuncPressed = 0xFF232C55;
+        t.keyBgActionPressed = 0xFF6838E8;
+        t.keyText = 0xFFEDF0FF;
+        t.keyTextFunc = 0xFFB9C2F0;
+        t.keyTextAction = 0xFFFFFFFF;
+        t.hintText = 0xFF8A93C4;
+        t.popupBg = 0xFF222B52;
+        t.stripWord = 0xFFB388FF;
+        return t;
     }
 
-    public static ThemeSet light(int accent) {
+    private static ThemeSet light(int bg, int key, int action, boolean grad) {
         ThemeSet t = new ThemeSet();
         t.dark = false;
-        t.kbBg = 0xFFE9EBEF;
-        t.keyBg = 0xFFFFFFFF;
-        t.keyBgFunc = 0xFFD3D7DE;
-        t.keyBgAction = accent;
-        t.keyBgPressed = shade(t.keyBg, 0.86f);
+        t.gradient = grad;
+        t.kbBg = bg;
+        t.kbBgTop = shade(bg, 0.96f);
+        t.keyBg = key;
+        t.keyBgFunc = shade(key, 0.82f);
+        t.keyBgAction = action;
+        t.keyBgPressed = shade(key, 0.86f);
         t.keyBgFuncPressed = shade(t.keyBgFunc, 0.86f);
-        t.keyBgActionPressed = shade(t.keyBgAction, 0.85f);
+        t.keyBgActionPressed = shade(action, 0.85f);
         t.keyText = 0xFF1F2430;
         t.keyTextFunc = 0xFF3C4043;
-        t.keyTextAction = accentText(accent);
+        t.keyTextAction = isGold(action) ? 0xFF332600 : 0xFFFFFFFF;
         t.hintText = 0xFF80868B;
-        t.popupBg = 0xFFFFFFFF;
+        t.popupBg = key;
+        t.stripWord = action;
         return t;
     }
 
-    public static ThemeSet dark(int accent) {
+    private static ThemeSet dark(int bg, int key, int action, boolean grad) {
         ThemeSet t = new ThemeSet();
         t.dark = true;
-        t.kbBg = 0xFF1B1D21;
-        t.keyBg = 0xFF35383D;
-        t.keyBgFunc = 0xFF26282C;
-        t.keyBgAction = accent;
-        t.keyBgPressed = shade(t.keyBg, 1.35f);
+        t.gradient = grad;
+        t.kbBg = bg;
+        t.kbBgTop = shade(bg, 1.45f);
+        t.keyBg = key;
+        t.keyBgFunc = shade(bg, 1.25f);
+        t.keyBgAction = action;
+        t.keyBgPressed = shade(key, 1.35f);
         t.keyBgFuncPressed = shade(t.keyBgFunc, 1.6f);
-        t.keyBgActionPressed = shade(t.keyBgAction, 0.8f);
+        t.keyBgActionPressed = shade(action, 0.8f);
         t.keyText = 0xFFE8EAED;
         t.keyTextFunc = 0xFFDADCE0;
-        t.keyTextAction = accentText(accent);
-        t.hintText = 0xFF9AA0A6;
-        t.popupBg = 0xFF3C4043;
+        t.keyTextAction = isGold(action) ? 0xFF332600 : 0xFFFFFFFF;
+        t.hintText = shade(0xFF9AA0A6, 1f);
+        t.popupBg = shade(key, 1.15f);
+        t.stripWord = action;
         return t;
     }
 
-    public static ThemeSet amoled(int accent) {
-        ThemeSet t = new ThemeSet();
-        t.dark = true;
-        t.kbBg = 0xFF000000;
-        t.keyBg = 0xFF1A1C1E;
-        t.keyBgFunc = 0xFF0F1113;
-        t.keyBgAction = accent;
-        t.keyBgPressed = shade(t.keyBg, 2.1f);
-        t.keyBgFuncPressed = shade(t.keyBgFunc, 2.6f);
-        t.keyBgActionPressed = shade(t.keyBgAction, 0.8f);
-        t.keyText = 0xFFE8EAED;
-        t.keyTextFunc = 0xFFDADCE0;
-        t.keyTextAction = accentText(accent);
-        t.hintText = 0xFF8A8F94;
-        t.popupBg = 0xFF2B2D30;
-        return t;
+    private static boolean isGold(int c) {
+        int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        return r > 200 && g > 150 && b < 120;
     }
 }
