@@ -38,7 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * التطبيق الرئيسي — DRS Smart Keyboard v2.5
+ * التطبيق الرئيسي — DRS Smart Keyboard v2.6
  * تطبيق متعدد الشاشات بتصميم عصري موحد وخمسة أقسام:
  *   الرئيسية (حالة + اختصارات سريعة + تجربة) — الثيمات — الإعدادات — الفحص الذكي — حول
  * تنقّل سفلي بأيقونات مرسومة، انتقالات ناعمة، وهوية بصرية متكاملة.
@@ -53,6 +53,9 @@ public class MainActivity extends Activity {
     private static final int TAB_COUNT = 5;
     private static final String[] TAB_LABELS = {
             "الرئيسية", "الثيمات", "الإعدادات", "الفحص الذكي", "حول"
+    };
+    private static final int[] TAB_ICONS = {
+            Icon.HOUSE, Icon.SWATCHES, Icon.SLIDERS, Icon.SHIELD, Icon.INFO
     };
 
     private Prefs prefs;
@@ -91,27 +94,42 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(UiKit.PAGE_BG);
 
-        // ===== الشريط العلوي =====
+        // ===== الشريط العلوي — بطاقة عصرية بحواف دائرية وشعار مرسوم =====
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setBackground(UiKit.rounded(0x00000000, 0, this));
-        header.setPadding(dp(20), dp(18), dp(20), dp(14));
+        GradientDrawable hbg = new GradientDrawable();
+        hbg.setOrientation(GradientDrawable.Orientation.TL_BR);
+        hbg.setColors(new int[]{UiKit.HERO_START, UiKit.HERO_MID, UiKit.HERO_END});
+        hbg.setCornerRadius(dp(24));
+        hbg.setStroke(dp(1), 0x2EFFFFFF);
+        header.setBackground(hbg);
+        header.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        View logo = new View(this);
-        GradientDrawable lg = UiKit.accentGradient(this, 12);
-        logo.setBackground(lg);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        // شعار مرسوم: أيقونة لوحة مفاتيح داخل مربع متدرج
+        FrameLayout logoWrap = new FrameLayout(this);
+        logoWrap.setBackground(UiKit.accentGradient(this, 14));
+        Icon logoIc = new Icon(this, Icon.KEYBOARD, 0xFFFFFFFF);
+        logoWrap.addView(logoIc, new FrameLayout.LayoutParams(
+                dp(24), dp(24), Gravity.CENTER));
+        header.addView(logoWrap, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
+        LinearLayout hCol = UiKit.vstack(this);
         TextView hTitle = new TextView(this);
         hTitle.setText("DRS Smart Keyboard");
-        hTitle.setTextSize(18);
+        hTitle.setTextSize(16.5f);
         hTitle.setTypeface(UiKit.bold());
         hTitle.setTextColor(UiKit.TEXT_MAIN);
+        hCol.addView(hTitle);
+        TextView hSub = new TextView(this);
+        hSub.setText("لوحة المفاتيح العربية الذكية");
+        hSub.setTextSize(10.5f);
+        hSub.setTextColor(UiKit.TEXT_SUB);
+        hCol.addView(hSub);
         LinearLayout.LayoutParams htLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         htLp.setMargins(dp(12), 0, dp(8), 0);
-        header.addView(hTitle, htLp);
+        header.addView(hCol, htLp);
 
         TextView ver = UiKit.chip(this, "v" + BuildInfo.VERSION_NAME,
                 0x227C5CFF, 0x557C5CFF, UiKit.ACCENT_SOFT);
@@ -119,7 +137,7 @@ public class MainActivity extends Activity {
 
         LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hLp.setMargins(dp(8), dp(4), dp(8), 0);
+        hLp.setMargins(dp(10), dp(10), dp(10), dp(2));
         root.addView(header, hLp);
 
         // ===== محتوى الشاشات =====
@@ -128,20 +146,27 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         root.addView(content, cLp);
 
-        // ===== شريط التنقل السفلي =====
+        // ===== شريط التنقل السفلي — قرص عائم بحواف دائرية ناعمة =====
+        FrameLayout navWrap = new FrameLayout(this);
+        navWrap.setPadding(dp(10), dp(6), dp(10), dp(10));
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setBackground(UiKit.outlined(UiKit.NAV_BG, 0, UiKit.CARD_STROKE, 1, this));
-        nav.setPadding(dp(6), dp(8), dp(6), dp(10));
+        GradientDrawable nbg = new GradientDrawable();
+        nbg.setColor(UiKit.NAV_BG);
+        nbg.setCornerRadius(dp(26));
+        nbg.setStroke(dp(1), 0x3D1F2A4D);
+        nav.setBackground(nbg);
+        nav.setPadding(dp(6), dp(7), dp(6), dp(7));
         for (int i = 0; i < TAB_COUNT; i++) {
             navItems[i] = navItem(i);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             nav.addView(navItems[i], lp);
         }
-        LinearLayout.LayoutParams nLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        root.addView(nav, nLp);
+        navWrap.addView(nav, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(navWrap, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         setContentView(root);
         for (int i = 0; i < TAB_COUNT; i++) {
@@ -158,11 +183,10 @@ public class MainActivity extends Activity {
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(Gravity.CENTER);
         item.setClickable(true);
-        item.setBackground(UiKit.rounded(0x00000000, 14, this));
-        item.setPadding(0, dp(5), 0, dp(5));
+        item.setPadding(0, dp(6), 0, dp(6));
 
-        TabIcon icon = new TabIcon(this, index);
-        item.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        Icon icon = new Icon(this, TAB_ICONS[index], UiKit.TEXT_FAINT);
+        item.addView(icon, new LinearLayout.LayoutParams(dp(23), dp(23)));
 
         TextView label = new TextView(this);
         label.setText(TAB_LABELS[index]);
@@ -186,11 +210,15 @@ public class MainActivity extends Activity {
         for (int i = 0; i < TAB_COUNT; i++) {
             LinearLayout item = navItems[i];
             boolean on = i == active;
-            item.setBackground(on ? UiKit.rounded(0x1F7C5CFF, 14, this)
-                                  : UiKit.rounded(0x00000000, 14, this));
+            // قرص نشط بحواف دائرية ولمسة لون التمييز
+            GradientDrawable ib = new GradientDrawable();
+            ib.setCornerRadius(dp(19));
+            ib.setColor(on ? 0x267C5CFF : 0x00000000);
+            if (on) ib.setStroke(dp(1), 0x407C5CFF);
+            item.setBackground(ib);
             TextView label = (TextView) item.getTag();
             label.setTextColor(on ? UiKit.ACCENT_SOFT : UiKit.TEXT_FAINT);
-            ((TabIcon) item.getChildAt(0)).setActive(on);
+            ((Icon) item.getChildAt(0)).setActive(on, UiKit.ACCENT_SOFT, UiKit.TEXT_FAINT);
         }
     }
 
@@ -295,16 +323,16 @@ public class MainActivity extends Activity {
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
 
-        LinearLayout t1 = UiKit.tile(this, "🎨", "الثيمات", "١٦ ثيماً و٨ ألوان", new View.OnClickListener() {
+        LinearLayout t1 = UiKit.tile(this, Icon.PALETTE, "الثيمات", "١٦ ثيماً و٨ ألوان", new View.OnClickListener() {
             @Override public void onClick(View v) { showTab(TAB_THEMES); }
         });
-        LinearLayout t2 = UiKit.tile(this, "🛡", "الفحص الذكي", "١٤ فحصاً شاملاً", new View.OnClickListener() {
+        LinearLayout t2 = UiKit.tile(this, Icon.SHIELD, "الفحص الذكي", "١٤ فحصاً شاملاً", new View.OnClickListener() {
             @Override public void onClick(View v) { showTab(TAB_DIAG); }
         });
-        LinearLayout t3 = UiKit.tile(this, "⚙", "الإعدادات", "تحكم كامل", new View.OnClickListener() {
+        LinearLayout t3 = UiKit.tile(this, Icon.GEAR, "الإعدادات", "تحكم كامل", new View.OnClickListener() {
             @Override public void onClick(View v) { showTab(TAB_SETTINGS); }
         });
-        LinearLayout t4 = UiKit.tile(this, "ℹ", "حول التطبيق", "دليل الاستخدام", new View.OnClickListener() {
+        LinearLayout t4 = UiKit.tile(this, Icon.INFO, "حول التطبيق", "دليل الاستخدام", new View.OnClickListener() {
             @Override public void onClick(View v) { showTab(TAB_ABOUT); }
         });
         LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(96), 1f);
@@ -444,8 +472,15 @@ public class MainActivity extends Activity {
         if (diagResults == null) { diagEverRun = false; return; }
         diagEverRun = true;
         diagResults.removeAllViews();
-        TextView running = UiKit.text(this, "⏳ جارٍ فحص كل المكوّنات...", 14, UiKit.AMBER, true);
-        diagResults.addView(running);
+        LinearLayout runRow = UiKit.hstack(this);
+        Icon runIc = new Icon(this, Icon.HOURGLASS, UiKit.AMBER);
+        runRow.addView(runIc, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        TextView runTx = UiKit.text(this, "جارٍ فحص كل المكوّنات...", 14, UiKit.AMBER, true);
+        LinearLayout.LayoutParams runLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        runLp.setMargins(dp(8), 0, 0, 0);
+        runRow.addView(runTx, runLp);
+        diagResults.addView(runRow);
 
         SelfTest.Report rep = null;
         try {
@@ -473,7 +508,15 @@ public class MainActivity extends Activity {
         diagResults.addView(sum);
 
         if (rep.healed) {
-            diagResults.addView(UiKit.text(this, "🔧 " + rep.healNote, 12.5f, UiKit.GREEN, false));
+            LinearLayout healRow = UiKit.hstack(this);
+            Icon healIc = new Icon(this, Icon.WRENCH, UiKit.GREEN);
+            healRow.addView(healIc, new LinearLayout.LayoutParams(dp(15), dp(15)));
+            TextView healTx = UiKit.text(this, rep.healNote, 12.5f, UiKit.GREEN, false);
+            LinearLayout.LayoutParams healLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            healLp.setMargins(dp(8), 0, 0, 0);
+            healRow.addView(healTx, healLp);
+            diagResults.addView(healRow);
         }
 
         for (final SelfTest.Result x : rep.results) {
@@ -481,18 +524,17 @@ public class MainActivity extends Activity {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.TOP);
 
-            TextView mark = new TextView(this);
+            int markIcon; int markColor;
             switch (x.status) {
-                case SelfTest.PASS: mark.setText("✔"); mark.setTextColor(UiKit.GREEN); break;
-                case SelfTest.WARN: mark.setText("⚠"); mark.setTextColor(UiKit.AMBER); break;
-                case SelfTest.FAIL: mark.setText("✖"); mark.setTextColor(UiKit.RED); break;
-                default: mark.setText("ℹ"); mark.setTextColor(0xFF8A93C4); break;
+                case SelfTest.PASS: markIcon = Icon.CHECK_CIRCLE; markColor = UiKit.GREEN; break;
+                case SelfTest.WARN: markIcon = Icon.WARN_TRIANGLE; markColor = UiKit.AMBER; break;
+                case SelfTest.FAIL: markIcon = Icon.CROSS_CIRCLE; markColor = UiKit.RED; break;
+                default: markIcon = Icon.INFO; markColor = 0xFF8A93C4; break;
             }
-            mark.setTextSize(15);
-            mark.setTypeface(UiKit.bold());
-            mark.setPadding(0, dp(2), dp(10), 0);
-            row.addView(mark, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            Icon mark = new Icon(this, markIcon, markColor);
+            LinearLayout.LayoutParams mLp = new LinearLayout.LayoutParams(dp(17), dp(17));
+            mLp.setMargins(0, dp(2), dp(10), 0);
+            row.addView(mark, mLp);
 
             LinearLayout col = UiKit.vstack(this);
             col.addView(UiKit.text(this, x.name, 14, UiKit.TEXT_MAIN, true));
@@ -685,7 +727,7 @@ public class MainActivity extends Activity {
     // ==================== الشاشة ٣: الإعدادات ====================
 
     private void buildSettings(LinearLayout page) {
-        pageSection(page, "⌨", "الكتابة الذكية");
+        pageSection(page, Icon.KEYBOARD, "الكتابة الذكية");
         LinearLayout typing = UiKit.card(this);
         typing.addView(toggle("الاقتراحات الذكية", "شريط يعرض ٣ كلمات متوقعة أثناء الكتابة", prefs.suggest, new UiKit.BoolListener() {
             @Override public void on(boolean b) { prefs.setSuggest(b); }
@@ -710,7 +752,7 @@ public class MainActivity extends Activity {
         }));
         addCard(page, typing, 8);
 
-        pageSection(page, "📐", "التنسيق والمظهر");
+        pageSection(page, Icon.RULER, "التنسيق والمظهر");
         LinearLayout layoutCard = UiKit.card(this);
         layoutCard.addView(sectionLabel("حجم المفاتيح"));
         layoutCard.addView(UiKit.segmented(this,
@@ -735,7 +777,7 @@ public class MainActivity extends Activity {
         }));
         addCard(page, layoutCard, 8);
 
-        pageSection(page, "🔊", "الصوت واللمس");
+        pageSection(page, Icon.SPEAKER, "الصوت واللمس");
         LinearLayout soundCard = UiKit.card(this);
         soundCard.addView(toggle("صوت النقر", "نقرات خفيفة عند الضغط على الأزرار", prefs.sound, new UiKit.BoolListener() {
             @Override public void on(boolean b) { prefs.setSound(b); }
@@ -750,7 +792,7 @@ public class MainActivity extends Activity {
                 }));
         addCard(page, soundCard, 8);
 
-        pageSection(page, "🕶", "الخصوصية");
+        pageSection(page, Icon.EYE_OFF, "الخصوصية");
         LinearLayout privCard = UiKit.card(this);
         privCard.addView(toggle("الوضع التخفي", "إيقاف التعلّم والتقاط الحافظة وسجل الإيموجي مؤقتاً — درع في شريط اللوحة لتفعيله أثناء الكتابة", prefs.incognito, new UiKit.BoolListener() {
             @Override public void on(boolean b) { prefs.setIncognito(b); }
@@ -760,7 +802,7 @@ public class MainActivity extends Activity {
                 UiKit.FIELD_BG, UiKit.FIELD_STROKE, UiKit.TEXT_SUB));
         addCard(page, privCard, 8);
 
-        pageSection(page, "📚", "القاموس الذكي");
+        pageSection(page, Icon.BOOK, "القاموس الذكي");
         LinearLayout dictCard = UiKit.card(this);
         dictCard.addView(UiKit.body(this,
                 "اللوحة تتعلّم كلماتك محلياً وتقترحها أولاً في المرة القادمة."));
@@ -780,7 +822,7 @@ public class MainActivity extends Activity {
         }));
         addCard(page, dictCard, 8);
 
-        pageSection(page, "⚡", "الاختصارات النصية");
+        pageSection(page, Icon.BOLT, "الاختصارات النصية");
         LinearLayout scCard = UiKit.card(this);
         scCard.addView(UiKit.body(this,
                 "اكتب الاختصار ثم مسافة فيتوسّع تلقائياً إلى النص الكامل."));
@@ -789,7 +831,7 @@ public class MainActivity extends Activity {
         fillShortcutsBox();
         addCard(page, scCard, 8);
 
-        pageSection(page, "💾", "النسخ الاحتياطي والاستعادة");
+        pageSection(page, Icon.SAVE, "النسخ الاحتياطي والاستعادة");
         LinearLayout bkCard = UiKit.card(this);
         bkCard.addView(UiKit.body(this,
                 "صدّر كل إعداداتك وقاموسك واختصاراتك وحافظتك كنص واحد، واستعدها على أي جهاز."));
@@ -802,11 +844,14 @@ public class MainActivity extends Activity {
         addCard(page, bkCard, 8);
     }
 
-    /** ترويسة قسم داخل شاشة الإعدادات */
-    private void pageSection(LinearLayout page, String glyph, String title) {
+    /** ترويسة قسم داخل شاشة الإعدادات — أيقونة داخل شارة دائرية */
+    private void pageSection(LinearLayout page, int iconType, String title) {
         LinearLayout head = UiKit.hstack(this);
-        TextView g = UiKit.text(this, glyph, 15, UiKit.ACCENT_SOFT, true);
-        head.addView(g);
+        FrameLayout badge = new FrameLayout(this);
+        badge.setBackground(UiKit.rounded(0x267C5CFF, 10, this));
+        Icon g = new Icon(this, iconType, UiKit.ACCENT_SOFT);
+        badge.addView(g, new FrameLayout.LayoutParams(dp(15), dp(15), Gravity.CENTER));
+        head.addView(badge, new LinearLayout.LayoutParams(dp(28), dp(28)));
         TextView t = UiKit.text(this, title, 16, UiKit.TEXT_MAIN, true);
         LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -814,7 +859,7 @@ public class MainActivity extends Activity {
         head.addView(t, tLp);
         LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hLp.setMargins(dp(16), dp(14), dp(16), 0);
+        hLp.setMargins(dp(14), dp(14), dp(14), 0);
         page.addView(head, hLp);
     }
 
@@ -848,11 +893,7 @@ public class MainActivity extends Activity {
             row.addView(tv, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-            TextView del = new TextView(this);
-            del.setText("✕");
-            del.setTextSize(14);
-            del.setTypeface(UiKit.bold());
-            del.setTextColor(UiKit.RED);
+            Icon del = new Icon(this, Icon.CROSS, UiKit.RED);
             del.setPadding(dp(12), dp(4), dp(6), dp(4));
             del.setClickable(true);
             del.setOnClickListener(new View.OnClickListener() {
@@ -863,7 +904,7 @@ public class MainActivity extends Activity {
                 }
             });
             row.addView(del, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    dp(26), dp(20)));
 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -925,12 +966,12 @@ public class MainActivity extends Activity {
 
         LinearLayout guide = UiKit.card(this);
         guide.addView(UiKit.title(this, "دليل سريع"));
-        guide.addView(guideRow("⌨", "ست لغات كاملة: العربية وEnglish وFrançais وDeutsch وEspañol وTürkçe — زر التبديل في الصف الثالث"));
-        guide.addView(guideRow("👆", "اضغط مطولاً على أي حرف لبدائله وحركات التشكيل"));
+        guide.addView(guideRow(Icon.KEYBOARD, "ست لغات كاملة: العربية وEnglish وFrançais وDeutsch وEspañol وTürkçe — زر التبديل في الصف الثالث"));
+        guide.addView(guideRow(Icon.TAP, "اضغط مطولاً على أي حرف لبدائله وحركات التشكيل"));
         glideGuide(guide);
-        guide.addView(guideRow("📋", "زر «تحرير» يفتح لوحة المؤشر والحافظة والنسخ واللصق"));
-        guide.addView(guideRow("🎨", "غيّر الثيم ولون التمييز من تبويب الثيمات — يطبّق فوراً"));
-        guide.addView(guideRow("🛡", "الفحص الذكي يفحص ١٤ مكوناً ويصلح الإعدادات التالفة ذاتياً"));
+        guide.addView(guideRow(Icon.CLIPBOARD, "زر «تحرير» يفتح لوحة المؤشر والحافظة والنسخ واللصق"));
+        guide.addView(guideRow(Icon.PALETTE, "غيّر الثيم ولون التمييز من تبويب الثيمات — يطبّق فوراً"));
+        guide.addView(guideRow(Icon.SHIELD, "الفحص الذكي يفحص ١٤ مكوناً ويصلح الإعدادات التالفة ذاتياً"));
         addCard(page, guide, 8);
 
         LinearLayout info = UiKit.card(this);
@@ -952,14 +993,16 @@ public class MainActivity extends Activity {
     }
 
     private void glideGuide(LinearLayout guide) {
-        guide.addView(guideRow("✍", "الكتابة بالسحب: مرّر إصبعك فوق حروف الكلمة دفعة واحدة"));
+        guide.addView(guideRow(Icon.PEN, "الكتابة بالسحب: مرّر إصبعك فوق حروف الكلمة دفعة واحدة"));
     }
 
-    private LinearLayout guideRow(String glyph, String txt) {
+    private LinearLayout guideRow(int iconType, String txt) {
         LinearLayout row = UiKit.hstack(this);
         row.setGravity(Gravity.TOP);
-        TextView g = UiKit.text(this, glyph, 13, UiKit.ACCENT_SOFT, true);
-        row.addView(g);
+        Icon g = new Icon(this, iconType, UiKit.ACCENT_SOFT);
+        LinearLayout.LayoutParams gLp = new LinearLayout.LayoutParams(dp(15), dp(15));
+        gLp.setMargins(0, dp(2), 0, 0);
+        row.addView(g, gLp);
         TextView t = UiKit.text(this, txt, 13, UiKit.TEXT_SUB, false);
         LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -1149,96 +1192,4 @@ public class MainActivity extends Activity {
         fillStatusBox();
     }
 
-    // ==================== أيقونات شريط التنقل ====================
-
-    /** أيقونة مرسومة بالكامل عبر Canvas لكل تبويب */
-    private class TabIcon extends View {
-        private final int type;
-        private boolean active;
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path path = new Path();
-
-        TabIcon(Context c, int type) {
-            super(c);
-            this.type = type;
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(dp(1.8f));
-            p.setStrokeCap(Paint.Cap.ROUND);
-            p.setStrokeJoin(Paint.Join.ROUND);
-            setActive(type == TAB_HOME);
-        }
-
-        void setActive(boolean on) {
-            active = on;
-            p.setColor(on ? UiKit.ACCENT_SOFT : UiKit.TEXT_FAINT);
-            invalidate();
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float w = getWidth(), h = getHeight();
-            float cx = w / 2f, cy = h / 2f;
-            path.reset();
-            switch (type) {
-                case TAB_HOME: {
-                    // بيت: سقف + جسم
-                    path.moveTo(cx - w * 0.32f, cy + h * 0.05f);
-                    path.lineTo(cx, cy - h * 0.34f);
-                    path.lineTo(cx + w * 0.32f, cy + h * 0.05f);
-                    canvas.drawPath(path, p);
-                    path.reset();
-                    path.moveTo(cx - w * 0.22f, cy);
-                    path.lineTo(cx - w * 0.22f, cy + h * 0.34f);
-                    path.lineTo(cx + w * 0.22f, cy + h * 0.34f);
-                    path.lineTo(cx + w * 0.22f, cy);
-                    canvas.drawPath(path, p);
-                    break;
-                }
-                case TAB_THEMES: {
-                    // لوحة ألوان: مربعات ٢×٢
-                    float s = w * 0.26f, gap = w * 0.10f;
-                    p.setStyle(Paint.Style.FILL);
-                    canvas.drawRoundRect(cx - s - gap, cy - s - gap, cx - gap, cy - gap, dp(3), dp(3), p);
-                    canvas.drawRoundRect(cx + gap, cy - s - gap, cx + gap + s, cy - gap, dp(3), dp(3), p);
-                    p.setStyle(Paint.Style.STROKE);
-                    canvas.drawRoundRect(cx - s - gap, cy + gap, cx - gap, cy + gap + s, dp(3), dp(3), p);
-                    canvas.drawRoundRect(cx + gap, cy + gap, cx + gap + s, cy + gap + s, dp(3), dp(3), p);
-                    break;
-                }
-                case TAB_SETTINGS: {
-                    // منزلقات: ثلاثة خطوط بمقابض
-                    for (int i = -1; i <= 1; i++) {
-                        float y = cy + i * h * 0.28f;
-                        canvas.drawLine(cx - w * 0.34f, y, cx + w * 0.34f, y, p);
-                        p.setStyle(Paint.Style.FILL);
-                        canvas.drawCircle(cx + i * w * 0.18f, y, dp(2.6f), p);
-                        p.setStyle(Paint.Style.STROKE);
-                    }
-                    break;
-                }
-                case TAB_DIAG: {
-                    // درع
-                    path.moveTo(cx, cy - h * 0.38f);
-                    path.lineTo(cx + w * 0.32f, cy - h * 0.18f);
-                    path.lineTo(cx + w * 0.30f, cy + h * 0.12f);
-                    path.quadTo(cx + w * 0.20f, cy + h * 0.38f, cx, cy + h * 0.44f);
-                    path.quadTo(cx - w * 0.20f, cy + h * 0.38f, cx - w * 0.30f, cy + h * 0.12f);
-                    path.lineTo(cx - w * 0.32f, cy - h * 0.18f);
-                    path.close();
-                    canvas.drawPath(path, p);
-                    break;
-                }
-                default: {
-                    // معلومات: دائرة + i
-                    canvas.drawCircle(cx, cy, w * 0.36f, p);
-                    p.setStyle(Paint.Style.FILL);
-                    canvas.drawCircle(cx, cy - h * 0.14f, dp(1.6f), p);
-                    canvas.drawRect(cx - dp(1.2f), cy - dp(1), cx + dp(1.2f), cy + h * 0.20f, p);
-                    p.setStyle(Paint.Style.STROKE);
-                    break;
-                }
-            }
-        }
-    }
 }

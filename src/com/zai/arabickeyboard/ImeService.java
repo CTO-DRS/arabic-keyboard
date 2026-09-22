@@ -452,8 +452,14 @@ public class ImeService extends InputMethodService
         if (pinned) rowDrawable.setStroke(dp(1), theme.keyBgAction);
         rowBg.setBackground(rowDrawable);
 
+        if (pinned) {
+            Icon pin = new Icon(this, Icon.PIN, theme.keyBgAction);
+            LinearLayout.LayoutParams pinLp = new LinearLayout.LayoutParams(dp(13), dp(13));
+            pinLp.setMargins(0, 0, dp(7), 0);
+            rowBg.addView(pin, pinLp);
+        }
         TextView text = new TextView(this);
-        text.setText(pinned ? "📌 " + item : item);
+        text.setText(item);
         text.setTextSize(14);
         text.setMaxLines(2);
         text.setEllipsize(TextUtils.TruncateAt.END);
@@ -485,9 +491,7 @@ public class ImeService extends InputMethodService
         rowBg.addView(text, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView del = new TextView(this);
-        del.setText("✕");
-        del.setTextSize(14);
+        Icon del = new Icon(this, Icon.CROSS, theme.keyTextFunc);
         del.setPadding(dp(10), dp(4), dp(6), dp(4));
         del.setClickable(true);
         del.setOnClickListener(new View.OnClickListener() {
@@ -498,7 +502,7 @@ public class ImeService extends InputMethodService
             }
         });
         rowBg.addView(del, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                dp(24), dp(20)));
 
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(LinearLayout.VERTICAL);

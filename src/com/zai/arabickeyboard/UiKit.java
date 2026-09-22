@@ -13,7 +13,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 
 /**
- * مكتبة مكونات الواجهة العصرية — DRS Smart v2.5
+ * مكتبة مكونات الواجهة العصرية — DRS Smart v2.6
  * بطاقات دائرية، أزرار متدرجة، مفاتيح تبديل ملونة، أزرار مقسمة، حقول أنيقة.
  * نظام ألوان موحد داكن أنيق في كل شاشات التطبيق.
  */
@@ -295,8 +295,8 @@ public final class UiKit {
         return tv;
     }
 
-    /** صف عنصر شبكي قابل للنقر مع أيقونة رمزية وعنوان ووصف */
-    public static LinearLayout tile(Context c, String iconGlyph, String titleStr,
+    /** صف عنصر شبكي قابل للنقر مع أيقونة مرسومة داخل شارة وعنوان ووصف */
+    public static LinearLayout tile(Context c, int iconType, String titleStr,
                                     String subStr, View.OnClickListener l) {
         LinearLayout t = vstack(c);
         t.setGravity(Gravity.CENTER);
@@ -304,9 +304,15 @@ public final class UiKit {
         t.setClickable(true);
         t.setOnClickListener(l);
 
-        TextView icon = text(c, iconGlyph, 24, ACCENT_SOFT, true);
-        icon.setGravity(Gravity.CENTER);
-        t.addView(icon);
+        // شارة الأيقونة: مربع دائري الحواف بلمسة لون التمييز
+        android.widget.FrameLayout badge = new android.widget.FrameLayout(c);
+        badge.setBackground(rounded(0x2E7C5CFF, 13, c));
+        Icon ic = new Icon(c, iconType, ACCENT_SOFT);
+        badge.addView(ic, new android.widget.FrameLayout.LayoutParams(
+                dp(c, 22), dp(c, 22), Gravity.CENTER));
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(dp(c, 42), dp(c, 42));
+        bLp.setMargins(0, 0, 0, dp(c, 8));
+        t.addView(badge, bLp);
 
         TextView tt = text(c, titleStr, 13.5f, TEXT_MAIN, true);
         tt.setGravity(Gravity.CENTER);
