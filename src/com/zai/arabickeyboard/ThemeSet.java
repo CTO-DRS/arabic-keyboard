@@ -27,7 +27,8 @@ public class ThemeSet {
     public static final String[] NAMES = {
             "تلقائي", "نهاري", "ليلي", "AMOLED",
             "DRS ذكي", "سايبر", "نيون", "منتصف الليل",
-            "وردة ذهبية", "غروب", "زمرد", "ملكي"
+            "وردة ذهبية", "غروب", "زمرد", "ملكي",
+            "بحري", "رملي", "شرقي", "فضائي"
     };
 
     /** ألوان معاينة صغيرة لكل ثيم (خلفية، مفاتيح، تمييز) */
@@ -43,7 +44,11 @@ public class ThemeSet {
             {0xFFF9EEF2, 0xFFFFFFFF, 0xFFD81B60},   // 8 وردة ذهبية
             {0xFF2A1220, 0xFF471E2E, 0xFFFF7043},   // 9 غروب
             {0xFF0E1F18, 0xFF1B3A2C, 0xFF34D399},   // 10 زمرد
-            {0xFF1A1608, 0xFF2E280F, 0xFFFFC93A}    // 11 ملكي
+            {0xFF1A1608, 0xFF2E280F, 0xFFFFC93A},   // 11 ملكي
+            {0xFFE1F0FA, 0xFFFFFFFF, 0xFF0277BD},   // 12 بحري
+            {0xFFF6EFE3, 0xFFFFFFFF, 0xFFB26A00},   // 13 رملي
+            {0xFF230915, 0xFF3D1128, 0xFFFF5252},   // 14 شرقي
+            {0xFF0C0622, 0xFF1D1040, 0xFF651FFF}    // 15 فضائي
     };
 
     /** فهرس الثيم الافتراضي (هوية DRS) */
@@ -104,6 +109,10 @@ public class ThemeSet {
             case 9: return dark(0xFF2A1220, 0xFF471E2E, 0xFFFF7043, true);
             case 10: return dark(0xFF0E1F18, 0xFF1B3A2C, 0xFF34D399, true);
             case 11: return dark(0xFF1A1608, 0xFF2E280F, 0xFFFFC93A, true);
+            case 12: return light(0xFFE1F0FA, 0xFFFFFFFF, 0xFF0277BD, false);
+            case 13: return light(0xFFF6EFE3, 0xFFFFFFFF, 0xFFB26A00, false);
+            case 14: return dark(0xFF230915, 0xFF3D1128, 0xFFFF5252, true);
+            case 15: return dark(0xFF0C0622, 0xFF1D1040, 0xFF651FFF, true);
             default: return drsSmart();
         }
     }

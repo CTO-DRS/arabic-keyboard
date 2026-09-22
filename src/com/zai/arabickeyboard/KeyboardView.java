@@ -20,7 +20,9 @@ import android.widget.TextView;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * لوحة مفاتيح مرسومة بالكامل عبر Canvas — تصميم عصري بأزرار دائرية الحواف،
@@ -33,6 +35,11 @@ public class KeyboardView extends View {
         void onText(String t);
         void onKeyLongPress(Key k);
         void onCursorMove(int deltaSteps);
+    }
+
+    /** مستمع الكتابة بالسحب: يُستدعى عند رفع الإصبع بعد تمرير بين عدة حروف */
+    public interface GlideListener {
+        void onGlide(List<float[]> tracePoints, String letters);
     }
 
     private static class LaidKey {
@@ -57,6 +64,7 @@ public class KeyboardView extends View {
     public static final int STRIP_CLIP = 0;
     public static final int STRIP_EDIT = 1;
     public static final int STRIP_WORD = 2;
+    public static final int STRIP_SHIELD = 3;
 
     private StripListener stripListener;
     private final List<String> suggestions = new ArrayList<>();
@@ -77,6 +85,17 @@ public class KeyboardView extends View {
     private boolean spaceCursorMode;
     private float spaceStartX;
     private int cursorStepsEmitted;
+
+    // الكتابة بالسحب (Glide)
+    public boolean glideEnabled = false;
+    private boolean glideMode;
+    private final List<float[]> glidePts = new ArrayList<>();
+    private final StringBuilder glideLetters = new StringBuilder();
+    private float glideLastX, glideLastY;
+    private float glideStartX, glideStartY;
+    private GlideListener glideListener;
+    private int longPressDelay = 380;
+    public boolean incognitoOn = false;
 
     // أدوات الرسم
     private final Paint keyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -135,6 +154,30 @@ public class KeyboardView extends View {
     public void setListener(Listener l) { listener = l; }
 
     public void setStripListener(StripListener l) { stripListener = l; }
+
+    public void setGlideListener(GlideListener l) { glideListener = l; }
+
+    /** مدة الضغط المطوّل بالميلي ثانية */
+    public void setLongPressDelay(int ms) {
+        longPressDelay = Math.max(150, ms);
+    }
+
+    /** خريطة حروف اللوحة الحالية ← مركز الزر {x, y} (للمطابقة الهندسية للسحب) */
+    public Map<String, float[]> charCenters() {
+        Map<String, float[]> m = new HashMap<>();
+        for (List<LaidKey> lr : laid) {
+            for (LaidKey lk : lr) {
+                Key k = lk.key;
+                if (k.type == Key.CHAR && k.text != null && k.text.length() == 1
+                        && !m.containsKey(k.text)) {
+                    m.put(k.text, new float[]{lk.r.centerX(), lk.r.centerY()});
+                }
+            }
+        }
+        return m;
+    }
+
+    public int getKeyHeightPx() { return keyH; }
 
     public void setTheme(ThemeSet t) {
         theme = t;
@@ -204,7 +247,20 @@ public class KeyboardView extends View {
         handler.removeCallbacksAndMessages(null);
         hidePreview();
         dismissAltPopup();
+        clearGlide();
         if (touched != null) { touched.pressed = false; touched = null; }
+    }
+
+    /** مسح حالة السحب (Glide) بالكامل */
+    private void clearGlide() {
+        glidePts.clear();
+        glideLetters.setLength(0);
+        glideMode = false;
+    }
+
+    /** إلغاء مؤقّت الضغط المطوّل المعلّق (يستخدم عند تفعيل وضع السحب) */
+    private void cancelLongPressTimer() {
+        longPressedFired = true;
     }
 
     public int getDesiredHeight() {
@@ -278,6 +334,33 @@ public class KeyboardView extends View {
                 drawKey(canvas, lk);
             }
         }
+        // أثر السحب (Glide) فوق كل شيء
+        drawGlideTrace(canvas);
+    }
+
+    /** رسم مسار السحب: خط عريض شفاف بتوهج + قلب بلون التمييز */
+    private final Paint glidePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path glidePath = new Path();
+    private int glideGlowColor = 0;
+
+    private void drawGlideTrace(Canvas canvas) {
+        if (glidePts.size() < 2) return;
+        glidePath.reset();
+        glidePath.moveTo(glidePts.get(0)[0], glidePts.get(0)[1]);
+        for (int i = 1; i < glidePts.size(); i++) {
+            glidePath.lineTo(glidePts.get(i)[0], glidePts.get(i)[1]);
+        }
+        int glow = theme.keyBgAction;
+        glidePaint.setStyle(Paint.Style.STROKE);
+        glidePaint.setStrokeCap(Paint.Cap.ROUND);
+        glidePaint.setStrokeJoin(Paint.Join.ROUND);
+        glidePaint.setColor(((theme.dark ? 0x50 : 0x38) << 24) | (glow & 0xFFFFFF));
+        glidePaint.setStrokeWidth(dp(14));
+        canvas.drawPath(glidePath, glidePaint);
+        glidePaint.setColor(((theme.dark ? 0xC8 : 0xB4) << 24) | (glow & 0xFFFFFF));
+        glidePaint.setStrokeWidth(dp(4.5f));
+        canvas.drawPath(glidePath, glidePaint);
+        glideGlowColor = glow; // يُحفظ للاستخدام المستقبلي
     }
 
     private Paint bgPaint;
@@ -308,16 +391,18 @@ public class KeyboardView extends View {
         keyPaint.setColor(theme.dark ? 0x22FFFFFF : 0x22000000);
         canvas.drawRect(sidePad, stripH - dp(1), w - sidePad, stripH, keyPaint);
 
-        int iconW = dp(44);
-        int gap = dp(6);
+        int iconW = dp(40);
+        int gap = dp(5);
         int wordsStart = sidePad + iconW + gap;
-        int wordsEnd = w - sidePad - iconW - gap;
+        int wordsEnd = w - sidePad - 2 * iconW - 2 * gap;
         int slotW = (wordsEnd - wordsStart) / 3;
 
         // أيقونة الحافظة (يسار)
         drawClipboardIcon(canvas, sidePad + iconW / 2f, stripH / 2f, pressedSlot == 0);
+        // أيقونة الدرع (الوضع التخفي) قرب اليمين
+        drawShieldIcon(canvas, w - sidePad - iconW - gap - iconW / 2f, stripH / 2f, pressedSlot == 4);
         // أيقونة التحرير (يمين)
-        drawEditIcon(canvas, w - sidePad - iconW / 2f, stripH / 2f, pressedSlot == 4);
+        drawEditIcon(canvas, w - sidePad - iconW / 2f, stripH / 2f, pressedSlot == 5);
 
         // الكلمات
         for (int i = 0; i < 3; i++) {
@@ -337,7 +422,7 @@ public class KeyboardView extends View {
             float size = stripH * 0.40f;
             textPaint.setTextSize(size);
             float tw = textPaint.measureText(word);
-            float maxW = slotW - dp(10);
+            float maxW = slotW - dp(8);
             if (tw > maxW) {
                 // قص الكلمة الطويلة
                 while (word.length() > 1 && textPaint.measureText(word + "…") > maxW) {
@@ -355,6 +440,32 @@ public class KeyboardView extends View {
                 keyPaint.setColor(color);
                 canvas.drawRect(cx - uw / 2f, stripH - dp(6), cx + uw / 2f, stripH - dp(4.5f), keyPaint);
             }
+        }
+    }
+
+    /** أيقونة الدرع: الوضع التخفي (مفعّل = مملوء بلون التمييز) */
+    private void drawShieldIcon(Canvas canvas, float cx, float cy, boolean pressed) {
+        float w2 = dp(7.2f), h2 = dp(9.2f);
+        boolean on = incognitoOn;
+        iconPath.reset();
+        iconPath.moveTo(cx, cy - h2);
+        iconPath.lineTo(cx + w2, cy - h2 * 0.5f);
+        iconPath.lineTo(cx + w2 * 0.94f, cy + h2 * 0.22f);
+        iconPath.quadTo(cx + w2 * 0.62f, cy + h2 * 0.92f, cx, cy + h2);
+        iconPath.quadTo(cx - w2 * 0.62f, cy + h2 * 0.92f, cx - w2 * 0.94f, cy + h2 * 0.22f);
+        iconPath.lineTo(cx - w2, cy - h2 * 0.5f);
+        iconPath.close();
+        iconPaint.setColor(on || pressed ? theme.keyBgAction : theme.keyTextFunc);
+        iconPaint.setStyle(on ? Paint.Style.FILL : Paint.Style.STROKE);
+        iconPaint.setStrokeWidth(dp(1.6f));
+        iconPaint.setStrokeJoin(Paint.Join.ROUND);
+        canvas.drawPath(iconPath, iconPaint);
+        if (on) {
+            // شرطة داخل الدرع للدلالة على التفعيل
+            iconPaint.setColor(theme.keyTextAction);
+            iconPaint.setStyle(Paint.Style.STROKE);
+            iconPaint.setStrokeCap(Paint.Cap.ROUND);
+            canvas.drawLine(cx - w2 * 0.45f, cy, cx + w2 * 0.45f, cy, iconPaint);
         }
     }
 
@@ -626,16 +737,17 @@ public class KeyboardView extends View {
         return super.onTouchEvent(ev);
     }
 
-    /** فهرس خانة الشريط عند نقطة: 0 حافظة، 1-3 كلمات، 4 تحرير، -1 لا شيء */
+    /** فهرس خانة الشريط عند نقطة: 0 حافظة، 1-3 كلمات، 4 درع، 5 تحرير، -1 لا شيء */
     private int stripSlotAt(float x, float y) {
         if (!stripVisible || y > stripH) return -1;
         int w = getWidth();
-        int iconW = dp(44);
-        int gap = dp(6);
+        int iconW = dp(40);
+        int gap = dp(5);
         int wordsStart = sidePad + iconW + gap;
-        int wordsEnd = w - sidePad - iconW - gap;
+        int wordsEnd = w - sidePad - 2 * iconW - 2 * gap;
         if (x >= sidePad && x <= sidePad + iconW) return 0;
-        if (x >= wordsEnd && x <= w - sidePad) return 4;
+        if (x >= w - sidePad - iconW && x <= w - sidePad) return 5;
+        if (x >= w - sidePad - 2 * iconW - gap && x < w - sidePad - iconW) return 4;
         if (x >= wordsStart && x < wordsEnd) {
             int slotW = (wordsEnd - wordsStart) / 3;
             int s = 1 + (int) ((x - wordsStart) / slotW);
@@ -673,6 +785,19 @@ public class KeyboardView extends View {
         invalidate();
         pressFeedback();
         showPreview(k);
+        // بدء تتبّع السحب (Glide): على حرف فقط عند تفعيل الميزة
+        glideMode = false;
+        glidePts.clear();
+        glideLetters.setLength(0);
+        if (glideEnabled && k.key.type == Key.CHAR && k.key.text != null
+                && k.key.text.length() == 1) {
+            glideStartX = ev.getX();
+            glideStartY = ev.getY();
+            glideLastX = ev.getX();
+            glideLastY = ev.getY();
+            glidePts.add(new float[]{ev.getX(), ev.getY()});
+            glideLetters.append(k.key.text);
+        }
         if (k.key.code == Key.CODE_BACKSPACE) {
             startRepeat();
         } else if (k.key.type == Key.CHAR && k.key.alts != null && !k.key.alts.isEmpty()) {
@@ -702,6 +827,38 @@ public class KeyboardView extends View {
         if (altPopup != null) {
             updateAltSelection(x, y);
             return;
+        }
+
+        // تتبّع السحب (Glide): جمع نقاط المسار وتفعيل الوضع بعد مسافة كافية
+        if (glidePts != null && !glidePts.isEmpty()) {
+            float dx = x - glideLastX, dy = y - glideLastY;
+            if (dx * dx + dy * dy > dp(5) * dp(5)) {
+                glidePts.add(new float[]{x, y});
+                glideLastX = x;
+                glideLastY = y;
+                LaidKey gk = findKey(x, y);
+                if (gk != null && gk.key.type == Key.CHAR && gk.key.text != null
+                        && gk.key.text.length() == 1) {
+                    String ch = gk.key.text;
+                    if (glideLetters.charAt(glideLetters.length() - 1) != ch.charAt(0)) {
+                        glideLetters.append(ch);
+                    }
+                }
+                invalidate();
+            }
+            if (!glideMode) {
+                float sdx = x - glideStartX, sdy = y - glideStartY;
+                if (sdx * sdx + sdy * sdy > dp(26) * dp(26)) {
+                    // تفعيل وضع السحب: إلغاء الضغط المطوّل والمعاينة والتكرار
+                    glideMode = true;
+                    cancelLongPressTimer();
+                    stopRepeat();
+                    hidePreview();
+                    if (touched != null) touched.pressed = false;
+                    invalidate();
+                }
+            }
+            if (glideMode) return; // لا انتقاء مفاتيح أثناء السحب
         }
 
         // سحب على المسافة ← تحريك المؤشر
@@ -750,11 +907,27 @@ public class KeyboardView extends View {
             if (!cancelled && slot >= 0 && stripListener != null
                     && stripSlotAt(ev.getX(), ev.getY()) == slot) {
                 if (slot == 0) stripListener.onStripAction(STRIP_CLIP, -1);
-                else if (slot == 4) stripListener.onStripAction(STRIP_EDIT, -1);
+                else if (slot == 5) stripListener.onStripAction(STRIP_EDIT, -1);
+                else if (slot == 4) stripListener.onStripAction(STRIP_SHIELD, -1);
                 else {
                     int wi = slot - 1;
                     if (wi < suggestions.size()) stripListener.onStripAction(STRIP_WORD, wi);
                 }
+            }
+            return;
+        }
+        // إنهاء الكتابة بالسحب
+        if (glideMode) {
+            glideMode = false;
+            List<float[]> pts = new ArrayList<>(glidePts);
+            String letters = glideLetters.toString();
+            clearGlide();
+            if (touched != null) { touched.pressed = false; touched = null; }
+            invalidate();
+            hidePreview();
+            if (!cancelled && letters.length() >= 2 && glideListener != null) {
+                pressFeedback();
+                glideListener.onGlide(pts, letters);
             }
             return;
         }
@@ -795,7 +968,7 @@ public class KeyboardView extends View {
                 handler.postDelayed(this, delay);
             }
         };
-        handler.postDelayed(repeatRunnable, 380);
+        handler.postDelayed(repeatRunnable, Math.max(320, longPressDelay));
     }
 
     private void stopRepeat() {
@@ -808,7 +981,7 @@ public class KeyboardView extends View {
     private void scheduleLongPress(final LaidKey k, final boolean notify) {
         handler.postDelayed(new Runnable() {
             @Override public void run() {
-                if (touched != k || longPressedFired) return;
+                if (touched != k || longPressedFired || glideMode) return;
                 longPressedFired = true;
                 if (notify) {
                     if (listener != null) listener.onKeyLongPress(k.key);
@@ -816,7 +989,7 @@ public class KeyboardView extends View {
                     showAltPopup(k);
                 }
             }
-        }, 380);
+        }, longPressDelay);
     }
 
     // ---------- نافذة المعاينة ----------

@@ -37,6 +37,7 @@ public class Key {
     public static final int CODE_EDIT = -22;      // لوحة تحرير النص
     public static final int CODE_NUMPAD = -23;    // لوحة الأرقام الكاملة
     public static final int CODE_VOICE = -24;     // الإدخال الصوتي
+    public static final int CODE_FLOAT = -25;     // الوضع العائم
 
     public String label;        // النص المعروض عادي
     public String text;         // النص المُدخل عادي

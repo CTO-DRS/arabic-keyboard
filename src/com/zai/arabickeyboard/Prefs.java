@@ -19,6 +19,10 @@ public class Prefs {
     public boolean arabicDigits = false;// أرقام عربية-هندية في لوحة الأرقام
     public int accent = 0;              // لون التمييز: 0 افتراضي الثيم، 1..8
     public boolean nextWord = true;     // التنبؤ بالكلمة التالية
+    public boolean glide = true;        // الكتابة بالسحب
+    public boolean incognito = false;   // الوضع التخفي: بلا تعلم أو التقاط حافظة
+    public int soundStyle = 0;          // 0 كلاسيكية، 1 رقمية، 2 ناعمة
+    public int longPressIdx = 1;        // 0 سريع 250ms، 1 عادي 400ms، 2 بطيء 650ms
 
     private final SharedPreferences sp;
 
@@ -54,6 +58,10 @@ public class Prefs {
         arabicDigits = sp.getBoolean("arabic_digits", false);
         accent = sp.getInt("accent", 0);
         nextWord = sp.getBoolean("next_word", true);
+        glide = sp.getBoolean("glide", true);
+        incognito = sp.getBoolean("incognito", false);
+        soundStyle = sp.getInt("sound_style", 0);
+        longPressIdx = sp.getInt("long_press", 1);
     }
 
     public void setThemePreset(int t) {
@@ -124,5 +132,32 @@ public class Prefs {
     public void setNextWord(boolean b) {
         nextWord = b;
         sp.edit().putBoolean("next_word", b).apply();
+    }
+
+    public void setGlide(boolean b) {
+        glide = b;
+        sp.edit().putBoolean("glide", b).apply();
+    }
+
+    public void setIncognito(boolean b) {
+        incognito = b;
+        sp.edit().putBoolean("incognito", b).apply();
+    }
+
+    public void setSoundStyle(int s) {
+        soundStyle = s;
+        sp.edit().putInt("sound_style", s).apply();
+    }
+
+    public void setLongPressIdx(int i) {
+        longPressIdx = i;
+        sp.edit().putInt("long_press", i).apply();
+    }
+
+    /** مدة الضغط المطوّل بالميلي ثانية حسب الإعداد */
+    public int longPressMs() {
+        if (longPressIdx == 0) return 250;
+        if (longPressIdx == 2) return 650;
+        return 400;
     }
 }

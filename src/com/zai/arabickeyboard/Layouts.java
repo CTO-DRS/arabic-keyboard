@@ -342,7 +342,8 @@ public final class Layouts {
         rows.add(row(
                 f("↑", Key.CODE_ARR_U, 1f),
                 f("↓", Key.CODE_ARR_D, 1f),
-                f("تم", Key.CODE_BACK_TO_ABC, 1.4f)
+                f("عائم", Key.CODE_FLOAT, 1.3f),
+                f("تم", Key.CODE_BACK_TO_ABC, 1.3f)
         ));
         rows.add(row(
                 f("←", Key.CODE_ARR_L, 1.2f),

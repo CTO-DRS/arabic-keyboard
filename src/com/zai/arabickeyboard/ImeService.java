@@ -15,6 +15,7 @@ import android.media.AudioManager;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -26,18 +27,22 @@ import android.widget.GridLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * خدمة لوحة المفاتيح الذكية — DRS Smart v2.0
  * ست لغات، تنبؤ ذكي بالكلمات، تصحيح تلقائي، حافظة، لوحة تحرير، إيموجي مصنف.
  */
 public class ImeService extends InputMethodService
-        implements KeyboardView.Listener, KeyboardView.StripListener {
+        implements KeyboardView.Listener, KeyboardView.StripListener, KeyboardView.GlideListener {
 
     public static final int MODE_AR = 0;
     public static final int MODE_EN = 1;
@@ -80,6 +85,16 @@ public class ImeService extends InputMethodService
     private List<String> liveSugg;
     private String undoCorrected;   // آخر كلمة صححها المحرك تلقائياً
     private String undoOriginal;    // الكلمة الأصلية قبل التصحيح
+    private String glideCommitted;  // كلمة أُدخلت بالسحب (للتبديل من الشريط)
+
+    // الوضع العائم
+    private PopupWindow floatPopup;
+    private LinearLayout floatRoot;
+    private View dockBar;
+    private boolean floating;
+    private int floatW, floatPosX, floatPosY;
+    private int floatGripH;
+    private float gripGrabDX, gripGrabDY;
 
     @Override
     public void onCreate() {
@@ -95,6 +110,7 @@ public class ImeService extends InputMethodService
     @Override
     public void onDestroy() {
         if (VoiceInputActivity.delegate == this) VoiceInputActivity.delegate = null;
+        exitFloating();
         super.onDestroy();
     }
 
@@ -123,7 +139,11 @@ public class ImeService extends InputMethodService
         kv = new KeyboardView(this);
         kv.setListener(this);
         kv.setStripListener(this);
+        kv.setGlideListener(this);
         kv.hapticsEnabled = prefs.haptics;
+        kv.glideEnabled = prefs.glide && !prefs.incognito;
+        kv.setLongPressDelay(prefs.longPressMs());
+        kv.incognitoOn = prefs.incognito;
         kv.setKeyHeightScale(heightScale(prefs.keyHeight));
         kv.setOneHanded(prefs.oneHanded);
         container.addView(kv, new LinearLayout.LayoutParams(
@@ -257,6 +277,7 @@ public class ImeService extends InputMethodService
     }
 
     private void addEmojiRecent(String e) {
+        if (prefs.incognito) return; // التخفي: بلا سجل إيموجي
         List<String> items = new ArrayList<>();
         items.add(e);
         for (String s : emojiRecents()) if (!s.equals(e) && !s.isEmpty()) items.add(s);
@@ -450,6 +471,7 @@ public class ImeService extends InputMethodService
 
     /** التقاط النص المنسوخ حديثاً عند فتح الحقل */
     private void captureClipboard() {
+        if (prefs.incognito) return; // التخفي: لا التقاط حافظة
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm == null || !cm.hasPrimaryClip()) return;
@@ -481,6 +503,9 @@ public class ImeService extends InputMethodService
             kv.setTheme(t);
             kv.setKeyHeightScale(heightScale(prefs.keyHeight));
             kv.setOneHanded(prefs.oneHanded);
+            kv.glideEnabled = prefs.glide && !prefs.incognito;
+            kv.incognitoOn = prefs.incognito;
+            kv.setLongPressDelay(prefs.longPressMs());
         }
         theme = t;
         applyPanelTheme();
@@ -491,6 +516,7 @@ public class ImeService extends InputMethodService
         lastWasSpace = false;
         undoCorrected = null;
         undoOriginal = null;
+        glideCommitted = null;
         refreshLayout();
         updateEnterLabel();
         maybeAutoCapAtStart(info);
@@ -501,6 +527,7 @@ public class ImeService extends InputMethodService
     @Override
     public void onFinishInputView(boolean finishingInput) {
         if (kv != null) kv.cancelAll();
+        exitFloating();
         super.onFinishInputView(finishingInput);
     }
 
@@ -520,6 +547,14 @@ public class ImeService extends InputMethodService
         }
         if (clipPanel != null) {
             clipPanel.setVisibility(panel == PANEL_CLIP ? View.VISIBLE : View.GONE);
+        }
+        // إعادة قياس النافذة العائمة بعد أي تغيير في اللوحة
+        if (floating && floatPopup != null && floatPopup.isShowing()) {
+            try {
+                kv.measure(View.MeasureSpec.makeMeasureSpec(floatW, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                floatPopup.update(-1, -1, floatW, kv.getMeasuredHeight() + floatGripH);
+            } catch (Exception ignored) {}
         }
     }
 
@@ -652,9 +687,26 @@ public class ImeService extends InputMethodService
             updateEnterLabel();
             return;
         }
+        if (action == KeyboardView.STRIP_SHIELD) {
+            toggleIncognito();
+            return;
+        }
         if (action == KeyboardView.STRIP_WORD) {
             applySuggestion(index);
         }
+    }
+
+    /** تبديل الوضع التخفي: بلا تعلّم وبلا التقاط حافظة وبلا سجل إيموجي */
+    private void toggleIncognito() {
+        prefs.setIncognito(!prefs.incognito);
+        if (kv != null) {
+            kv.incognitoOn = prefs.incognito;
+            kv.glideEnabled = prefs.glide && !prefs.incognito;
+            kv.invalidate();
+        }
+        Toast.makeText(this, prefs.incognito
+                        ? R.string.incognito_on : R.string.incognito_off,
+                Toast.LENGTH_SHORT).show();
     }
 
     private void applySuggestion(int index) {
@@ -663,14 +715,158 @@ public class ImeService extends InputMethodService
         String picked = liveSugg.get(index);
         String word = currentWord();
         String prevWord = wordBefore(word);
+        // بعد إدخال كلمة بالسحب: النقر على بديل يستبدلها مباشرة
+        if (word.isEmpty() && glideCommitted != null
+                && picked.equals(glideCommitted)) {
+            glideCommitted = null;
+            return;
+        }
+        if (word.isEmpty() && glideCommitted != null) {
+            CharSequence before = ic.getTextBeforeCursor(glideCommitted.length() + 1, 0);
+            if (before != null && before.length() == glideCommitted.length() + 1) {
+                ic.deleteSurroundingText(glideCommitted.length() + 1, 0);
+                ic.commitText(picked + " ", 1);
+                if (!prefs.incognito) engine.learn(picked, engineLang());
+                if (prevWord != null && !prefs.incognito) engine.learnBigram(prevWord, picked, engineLang());
+                glideCommitted = picked;
+                updateSuggestions();
+                return;
+            }
+            glideCommitted = null;
+        }
         if (!word.isEmpty()) ic.deleteSurroundingText(word.length(), 0);
         ic.commitText(picked + " ", 1);
-        engine.learn(picked, engineLang());
-        if (prevWord != null) engine.learnBigram(prevWord, picked, engineLang());
+        if (!prefs.incognito) engine.learn(picked, engineLang());
+        if (prevWord != null && !prefs.incognito) engine.learnBigram(prevWord, picked, engineLang());
         lastWasSpace = true;
         lastSpaceAt = System.currentTimeMillis();
         consumeShift();
         updateSuggestions();
+    }
+
+    // ==================== الكتابة بالسحب (Glide) ====================
+
+    @Override
+    public void onGlide(List<float[]> tracePoints, String letters) {
+        if (!isLetterMode()) return;
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null || tracePoints == null || tracePoints.size() < 2) return;
+
+        // مرشّحات المحرك حسب تسلسل الحروف المرصود
+        List<Map.Entry<String, Integer>> cands = engine.glideCandidates(letters, engineLang());
+        if (cands.isEmpty()) {
+            // لا مطابقة: إدخال الحروف المرصودة كما هي (كأنها كُتبت واحداً تلو الآخر)
+            ic.commitText(letters, 1);
+            lastWasSpace = false;
+            updateSuggestions();
+            return;
+        }
+
+        // مطابقة هندسية: مقارنة مسار الإصبع بالمسار المثالي لكل كلمة
+        Map<String, float[]> centers = kv.charCenters();
+        float keyH = kv.getKeyHeightPx();
+        final int K = 28;
+        float[][] userPath = resample(tracePoints, K);
+
+        String best = null;
+        float bestScore = Float.MAX_VALUE;
+        List<String> ranked = new ArrayList<>();
+        List<Map.Entry<String, Float>> scored = new ArrayList<>();
+        for (Map.Entry<String, Integer> c : cands) {
+            List<float[]> ideal = idealPath(c.getKey(), centers, engineLang());
+            if (ideal == null) continue;
+            float[][] wPath = resample(ideal, K);
+            float d = 0;
+            for (int i = 0; i < K; i++) {
+                float dx = userPath[i][0] - wPath[i][0];
+                float dy = userPath[i][1] - wPath[i][1];
+                d += (float) Math.sqrt(dx * dx + dy * dy);
+            }
+            d /= K;
+            if (d < keyH * 0.62f) { // حد القبول الهندسي
+                scored.add(new HashMap.SimpleEntry<>(c.getKey(), d));
+                if (d < bestScore) { bestScore = d; best = c.getKey(); }
+            }
+        }
+        scored.sort((a, b) -> Float.compare(a.getValue(), b.getValue()));
+        for (int i = 0; i < scored.size() && i < 3; i++) ranked.add(scored.get(i).getKey());
+
+        if (best != null && !best.isEmpty()) {
+            ic.commitText(best + " ", 1);
+            if (!prefs.incognito) {
+                String prevWord = wordBefore(best);
+                engine.learn(best, engineLang());
+                if (prevWord != null) engine.learnBigram(prevWord, best, engineLang());
+            }
+            glideCommitted = best;
+            lastWasSpace = true;
+            lastSpaceAt = System.currentTimeMillis();
+            consumeShift();
+            // البدائل في الشريط للتصحيح بنقرة
+            List<String> alts = new ArrayList<>();
+            for (String r : ranked) if (!r.equals(best)) alts.add(r);
+            liveSugg = alts.isEmpty() ? null : alts;
+            kv.setSuggestions(liveSugg);
+        } else {
+            ic.commitText(letters, 1);
+            lastWasSpace = false;
+            glideCommitted = null;
+            updateSuggestions();
+        }
+    }
+
+    /** إعادة معايرة نقاط المسار بالتوزيع المكاني إلى K نقطة ثابتة */
+    private static float[][] resample(List<float[]> pts, int k) {
+        float[][] out = new float[k][2];
+        float total = 0;
+        for (int i = 1; i < pts.size(); i++) {
+            float dx = pts.get(i)[0] - pts.get(i - 1)[0];
+            float dy = pts.get(i)[1] - pts.get(i - 1)[1];
+            total += (float) Math.sqrt(dx * dx + dy * dy);
+        }
+        if (total <= 0) {
+            for (int i = 0; i < k; i++) {
+                out[i][0] = pts.get(0)[0];
+                out[i][1] = pts.get(0)[1];
+            }
+            return out;
+        }
+        float step = total / (k - 1);
+        float acc = 0;
+        int seg = 1;
+        out[0][0] = pts.get(0)[0];
+        out[0][1] = pts.get(0)[1];
+        for (int i = 1; i < k; i++) {
+            float target = step * i;
+            while (seg < pts.size()) {
+                float dx = pts.get(seg)[0] - pts.get(seg - 1)[0];
+                float dy = pts.get(seg)[1] - pts.get(seg - 1)[1];
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (acc + len >= target || seg == pts.size() - 1) {
+                    float t = (len <= 0) ? 0 : (target - acc) / len;
+                    if (t > 1) t = 1;
+                    out[i][0] = pts.get(seg - 1)[0] + dx * t;
+                    out[i][1] = pts.get(seg - 1)[1] + dy * t;
+                    break;
+                }
+                acc += len;
+                seg++;
+            }
+        }
+        return out;
+    }
+
+    /** المسار المثالي لكلمة: مراكز مفاتيح حروفها (null إن نقص حرف من اللوحة) */
+    private List<float[]> idealPath(String word, Map<String, float[]> centers, int lang) {
+        List<float[]> pts = new ArrayList<>();
+        String w = (lang == 1) ? word.toLowerCase(java.util.Locale.ENGLISH)
+                : SuggestEngine.normAr(word);
+        for (int i = 0; i < w.length(); i++) {
+            float[] c = centers.get(String.valueOf(w.charAt(i)));
+            if (c == null) return null;
+            pts.add(new float[]{c[0], c[1]});
+        }
+        return pts;
     }
 
     // ==================== التعامل مع المفاتيح ====================
@@ -717,6 +913,9 @@ public class ImeService extends InputMethodService
                 mode = MODE_NUMPAD; shiftOn = false; shiftLock = false;
                 closePanel();
                 refreshLayout(); updateEnterLabel();
+                return;
+            case Key.CODE_FLOAT:
+                if (floating) exitFloating(); else enterFloating();
                 return;
             case Key.CODE_VOICE:
                 handleVoice();
@@ -774,9 +973,27 @@ public class ImeService extends InputMethodService
         if (ic == null) return;
         long now = System.currentTimeMillis();
         undoCorrected = null; undoOriginal = null;
+        glideCommitted = null;
 
         String word = currentWord();
         String prevWord = wordBefore(word);
+
+        // توسيع الاختصارات النصية (أولوية قصوى)
+        if (isLetterMode() && !word.isEmpty()) {
+            String exp = engine.shortcutExpansion(word, engineLang());
+            if (exp != null) {
+                ic.deleteSurroundingText(word.length(), 0);
+                ic.commitText(exp + " ", 1);
+                if (!prefs.incognito) {
+                    engine.learn(word, engineLang());
+                    if (prevWord != null) engine.learnBigram(prevWord, word, engineLang());
+                }
+                lastWasSpace = true;
+                lastSpaceAt = now;
+                updateSuggestions();
+                return;
+            }
+        }
 
         // التصحيح التلقائي عند الضغط على المسافة (إنجليزي مباشرة + عربي بعد التطبيع)
         if (isLetterMode() && prefs.autoCorrect && word.length() >= 4
@@ -785,8 +1002,10 @@ public class ImeService extends InputMethodService
             if (fix != null && !fix.equals(word)) {
                 ic.deleteSurroundingText(word.length(), 0);
                 ic.commitText(fix + " ", 1);
-                engine.learn(fix, engineLang());
-                if (prevWord != null) engine.learnBigram(prevWord, fix, engineLang());
+                if (!prefs.incognito) {
+                    engine.learn(fix, engineLang());
+                    if (prevWord != null) engine.learnBigram(prevWord, fix, engineLang());
+                }
                 // تسجيل التراجع: الحذف بعد التصحيح يعيد الكلمة الأصلية
                 undoCorrected = fix;
                 undoOriginal = word;
@@ -797,7 +1016,8 @@ public class ImeService extends InputMethodService
             }
         }
         // تعلم الكلمة المكتوبة + ثنائيتها
-        if (isLetterMode() && word.length() >= 2 && engine.known(word, engineLang())) {
+        if (isLetterMode() && word.length() >= 2 && engine.known(word, engineLang())
+                && !prefs.incognito) {
             engine.learn(word, engineLang());
             if (prevWord != null) engine.learnBigram(prevWord, word, engineLang());
         }
@@ -1020,9 +1240,157 @@ public class ImeService extends InputMethodService
     private void playSound() {
         if (!prefs.sound) return;
         AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (am != null && am.getRingerMode() == AudioManager.RINGER_MODE_NORMAL) {
-            am.playSoundEffect(AudioManager.FX_KEY_CLICK);
+        if (am == null || am.getRingerMode() != AudioManager.RINGER_MODE_NORMAL) return;
+        int effect;
+        switch (prefs.soundStyle) {
+            case 1: effect = AudioManager.FX_KEYPRESS_STANDARD; break;
+            case 2: effect = AudioManager.FX_KEYPRESS_SPACEBAR; break;
+            default: effect = AudioManager.FX_KEY_CLICK; break;
         }
+        am.playSoundEffect(effect);
+    }
+
+    // ==================== الوضع العائم ====================
+
+    /** تحويل اللوحة إلى نافذة عائمة قابلة للسحب في أي مكان بالشاشة */
+    private void enterFloating() {
+        if (floating || kv == null || container == null) return;
+        try {
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            int sw = dm.widthPixels;
+            int sh = dm.heightPixels;
+            floatW = Math.min((int) (sw * 0.72f), dp(430));
+            int gripH = dp(30);
+            floatGripH = gripH;
+
+            // شريط القبض: سحب لتحريك اللوحة + زر العودة للرسو
+            LinearLayout grip = new LinearLayout(this);
+            grip.setOrientation(LinearLayout.HORIZONTAL);
+            grip.setGravity(Gravity.CENTER_VERTICAL);
+            GradientDrawable gripBg = new GradientDrawable();
+            gripBg.setColor(theme != null ? theme.keyBgFunc : 0xFF141A36);
+            grip.setBackground(gripBg);
+            grip.setPadding(dp(14), 0, dp(10), 0);
+
+            TextView handle = new TextView(this);
+            handle.setText("☰");
+            handle.setTextSize(15);
+            handle.setTextColor(theme != null ? theme.keyTextFunc : 0xFFB9C2F0);
+            grip.addView(handle, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            TextView dockBtn = new TextView(this);
+            dockBtn.setText(R.string.float_dock);
+            dockBtn.setTextSize(13);
+            dockBtn.setTextColor(theme != null ? theme.stripWord : 0xFFB388FF);
+            dockBtn.setPadding(dp(10), dp(4), dp(10), dp(4));
+            dockBtn.setClickable(true);
+            dockBtn.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) { exitFloating(); }
+            });
+            LinearLayout.LayoutParams dbLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dbLp.leftMargin = dp(8);
+            grip.addView(dockBtn, dbLp);
+
+            TextView title = new TextView(this);
+            title.setText(R.string.float_title);
+            title.setTextSize(12);
+            title.setTextColor(theme != null ? theme.hintText : 0xFF8A93C4);
+            LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            tLp.leftMargin = dp(10);
+            grip.addView(title, tLp);
+
+            // نقل لوحة المفاتيح إلى جذر النافذة العائمة
+            floatRoot = new LinearLayout(this);
+            floatRoot.setOrientation(LinearLayout.VERTICAL);
+            container.removeView(kv);
+            floatRoot.addView(grip, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, gripH));
+            floatRoot.addView(kv, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            // شريط الرسو في منطقة الإدخال الصغيرة
+            dockBar = new TextView(this);
+            ((TextView) dockBar).setText(R.string.float_return);
+            ((TextView) dockBar).setTextSize(13);
+            ((TextView) dockBar).setGravity(Gravity.CENTER);
+            ((TextView) dockBar).setTextColor(theme != null ? theme.stripWord : 0xFFB388FF);
+            GradientDrawable dbBg = new GradientDrawable();
+            dbBg.setColor(theme != null ? theme.kbBg : 0xFF0D1228);
+            dockBar.setBackground(dbBg);
+            dockBar.setClickable(true);
+            dockBar.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) { exitFloating(); }
+            });
+            container.addView(dockBar, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(36)));
+
+            // إظهار النافذة العائمة
+            floatPosX = sw - floatW - dp(10);
+            floatPosY = (int) (sh * 0.22f);
+            floatPopup = new PopupWindow(floatRoot, floatW,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, false);
+            floatPopup.showAtLocation(container, Gravity.TOP | Gravity.START,
+                    floatPosX, floatPosY);
+
+            // السحب: قبض على شريط القبض وتحريك النافذة
+            grip.setOnTouchListener(new View.OnTouchListener() {
+                float downRawX, downRawY;
+                @Override public boolean onTouch(View v, MotionEvent ev) {
+                    switch (ev.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            downRawX = ev.getRawX();
+                            downRawY = ev.getRawY();
+                            gripGrabDX = downRawX - floatPosX;
+                            gripGrabDY = downRawY - floatPosY;
+                            return true;
+                        case MotionEvent.ACTION_MOVE:
+                            float nx = ev.getRawX() - gripGrabDX;
+                            float ny = ev.getRawY() - gripGrabDY;
+                            floatPosX = (int) nx;
+                            floatPosY = (int) ny;
+                            if (floatPopup != null) {
+                                try { floatPopup.update((int) nx, (int) ny, -1, -1); }
+                                catch (Exception ignored) {}
+                            }
+                            return true;
+                        default:
+                            return false;
+                    }
+                }
+            });
+
+            floating = true;
+            Toast.makeText(this, R.string.float_on, Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            // فشل النافذة العائمة: إعادة اللوحة لوضعها الراسخ
+            exitFloating();
+        }
+    }
+
+    /** إعادة اللوحة إلى وضعها الراسخ أسفل الشاشة */
+    private void exitFloating() {
+        if (!floating && floatPopup == null && floatRoot == null && dockBar == null) return;
+        floating = false;
+        if (floatPopup != null) {
+            try { floatPopup.dismiss(); } catch (Exception ignored) {}
+            floatPopup = null;
+        }
+        if (floatRoot != null && kv != null && kv.getParent() == floatRoot) {
+            floatRoot.removeView(kv);
+        }
+        floatRoot = null;
+        if (container != null && kv != null && kv.getParent() == null) {
+            container.addView(kv, 0, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        if (container != null && dockBar != null && dockBar.getParent() == container) {
+            container.removeView(dockBar);
+        }
+        dockBar = null;
+        refreshLayout();
     }
 
     private int dp(float v) {

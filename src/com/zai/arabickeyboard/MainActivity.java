@@ -1,7 +1,11 @@
 package com.zai.arabickeyboard;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -24,6 +28,9 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
+import java.util.ArrayList;
 import java.util.List;
 
 /** الشاشة الرئيسية: التفعيل، الثيمات، الإعدادات بالأقسام، التجربة — DRS Smart v2.0 */
@@ -176,6 +183,12 @@ public class MainActivity extends Activity {
         addSwitch(typingCard, R.string.sw_next_word, prefs.nextWord, new SwitchListener() {
             @Override public void on(boolean b) { prefs.setNextWord(b); }
         });
+        addSwitch(typingCard, R.string.sw_glide, prefs.glide, new SwitchListener() {
+            @Override public void on(boolean b) { prefs.setGlide(b); }
+        });
+        addSwitch(typingCard, R.string.sw_incognito, prefs.incognito, new SwitchListener() {
+            @Override public void on(boolean b) { prefs.setIncognito(b); }
+        });
         addCard(typingCard);
 
         // ===== الصوت والاهتزاز =====
@@ -187,6 +200,12 @@ public class MainActivity extends Activity {
         addSwitch(soundCard, R.string.sw_haptic, prefs.haptics, new SwitchListener() {
             @Override public void on(boolean b) { prefs.setHaptics(b); }
         });
+        soundCard.addView(label(R.string.label_sound_style, 14, R.color.text_sub, false));
+        soundCard.addView(radioRow(new String[]{
+                getString(R.string.snd_classic), getString(R.string.snd_digital), getString(R.string.snd_soft)
+        }, prefs.soundStyle, new IntListener() {
+            @Override public void on(int i) { prefs.setSoundStyle(i); }
+        }));
         addCard(soundCard);
 
         // ===== التنسيق =====
@@ -203,6 +222,12 @@ public class MainActivity extends Activity {
                 getString(R.string.oh_center), getString(R.string.oh_right), getString(R.string.oh_left)
         }, prefs.oneHanded, new IntListener() {
             @Override public void on(int i) { prefs.setOneHanded(i); }
+        }));
+        layoutCard.addView(label(R.string.label_longpress, 14, R.color.text_sub, false));
+        layoutCard.addView(radioRow(new String[]{
+                getString(R.string.lp_fast), getString(R.string.lp_normal), getString(R.string.lp_slow)
+        }, prefs.longPressIdx, new IntListener() {
+            @Override public void on(int i) { prefs.setLongPressIdx(i); }
         }));
         addSwitch(layoutCard, R.string.sw_voice, prefs.voice, new SwitchListener() {
             @Override public void on(boolean b) { prefs.setVoice(b); }
@@ -284,6 +309,25 @@ public class MainActivity extends Activity {
         }));
         addCard(dictCard);
 
+        // ===== الاختصارات النصية =====
+        LinearLayout scCard = card();
+        scCard.addView(label(R.string.section_shortcuts, 17, R.color.text_main, true));
+        scCard.addView(label(R.string.shortcuts_info, 13, R.color.text_sub, false));
+        buildShortcutsList(scCard);
+        addCard(scCard);
+
+        // ===== النسخ الاحتياطي والاستعادة =====
+        LinearLayout bkCard = card();
+        bkCard.addView(label(R.string.section_backup, 17, R.color.text_main, true));
+        bkCard.addView(label(R.string.backup_info, 13, R.color.text_sub, false));
+        bkCard.addView(secondaryButton(R.string.btn_backup_export, new View.OnClickListener() {
+            @Override public void onClick(View v) { exportBackup(); }
+        }));
+        bkCard.addView(secondaryButton(R.string.btn_backup_import, new View.OnClickListener() {
+            @Override public void onClick(View v) { importBackupDialog(); }
+        }));
+        addCard(bkCard);
+
         // ===== التجربة =====
         LinearLayout tryCard = card();
         tryCard.addView(label(R.string.card_try_title, 17, R.color.text_main, true));
@@ -317,6 +361,214 @@ public class MainActivity extends Activity {
         tips.setPadding(dp(22), dp(14), dp(22), dp(10));
         tips.addView(label(R.string.footer_tips, 12, 0xFF6B7398, false));
         addCard(tips);
+    }
+
+    // ==================== الاختصارات النصية ====================
+
+    private void buildShortcutsList(LinearLayout parent) {
+        ArrayList<String[]> list = engine.getShortcuts();
+        if (list.isEmpty()) {
+            parent.addView(label(R.string.shortcuts_none, 13, R.color.text_sub, false));
+        }
+        for (final String[] s : list) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(9));
+            bg.setColor(0xFF0E1428);
+            bg.setStroke(dp(1), 0xFF2A3562);
+            row.setBackground(bg);
+            row.setPadding(dp(12), dp(9), dp(8), dp(9));
+
+            TextView tv = new TextView(this);
+            tv.setText(s[0] + "  ⤳  " + s[1]);
+            tv.setTextSize(13);
+            tv.setTextColor(0xFFEDF0FF);
+            tv.setMaxLines(2);
+            row.addView(tv, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            TextView del = new TextView(this);
+            del.setText("✕");
+            del.setTextSize(14);
+            del.setTextColor(0xFFFF7B93);
+            del.setPadding(dp(12), dp(4), dp(6), dp(4));
+            del.setClickable(true);
+            del.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    engine.removeShortcut(s[0]);
+                    Toast.makeText(MainActivity.this, R.string.shortcut_deleted, Toast.LENGTH_SHORT).show();
+                    buildSections();
+                }
+            });
+            row.addView(del, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, dp(8), 0, 0);
+            parent.addView(row, lp);
+        }
+
+        // نموذج إضافة اختصار جديد
+        final EditText abIn = new EditText(this);
+        abIn.setHint(R.string.shortcut_abbr_hint);
+        final EditText expIn = new EditText(this);
+        expIn.setHint(R.string.shortcut_exp_hint);
+        for (EditText et : new EditText[]{abIn, expIn}) {
+            et.setTextColor(0xFFEDF0FF);
+            et.setHintTextColor(0xFF6B7398);
+            et.setTextSize(14);
+            GradientDrawable etBg = new GradientDrawable();
+            etBg.setCornerRadius(dp(10));
+            etBg.setColor(0xFF0E1428);
+            etBg.setStroke(dp(1), 0xFF2A3562);
+            et.setBackground(etBg);
+            et.setPadding(dp(12), dp(10), dp(12), dp(10));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, dp(8), 0, 0);
+            parent.addView(et, lp);
+        }
+        parent.addView(primaryButton(R.string.btn_shortcut_add, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                String ab = abIn.getText().toString().trim();
+                String ex = expIn.getText().toString().trim();
+                if (ab.isEmpty() || ex.isEmpty()) return;
+                engine.addShortcut(ab, ex);
+                Toast.makeText(MainActivity.this, R.string.shortcut_added, Toast.LENGTH_SHORT).show();
+                buildSections();
+            }
+        }));
+    }
+
+    // ==================== النسخ الاحتياطي ====================
+
+    /** تصدير كل البيانات (إعدادات + قاموس + اختصارات + حافظة) كنص JSON */
+    private void exportBackup() {
+        try {
+            android.content.SharedPreferences panelSp =
+                    getSharedPreferences("kb_panel", Context.MODE_PRIVATE);
+            JSONObject o = new JSONObject();
+            o.put("app", "DRS-Smart-Keyboard");
+            o.put("v", 22);
+            o.put("theme", prefs.themePreset);
+            o.put("sound", prefs.sound);
+            o.put("haptics", prefs.haptics);
+            o.put("numRow", prefs.numRow);
+            o.put("autoCap", prefs.autoCap);
+            o.put("doubleSpace", prefs.doubleSpace);
+            o.put("suggest", prefs.suggest);
+            o.put("autoCorrect", prefs.autoCorrect);
+            o.put("keyHeight", prefs.keyHeight);
+            o.put("oneHanded", prefs.oneHanded);
+            o.put("voice", prefs.voice);
+            o.put("arabicDigits", prefs.arabicDigits);
+            o.put("accent", prefs.accent);
+            o.put("nextWord", prefs.nextWord);
+            o.put("glide", prefs.glide);
+            o.put("incognito", prefs.incognito);
+            o.put("soundStyle", prefs.soundStyle);
+            o.put("longPress", prefs.longPressIdx);
+            o.put("learned", engine.exportLearned());
+            o.put("bigrams", engine.exportBigrams());
+            o.put("shortcuts", engine.exportShortcuts());
+            o.put("clips", panelSp.getString("clips", ""));
+            o.put("pins", panelSp.getString("pins", ""));
+            o.put("emoji", panelSp.getString("emoji_recents", ""));
+            String json = o.toString();
+            // نسخ إلى الحافظة
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("DRS-Backup", json));
+            }
+            // مشاركة مباشرة أيضاً
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_TEXT, json);
+            try {
+                startActivity(Intent.createChooser(send, getString(R.string.btn_backup_export)));
+            } catch (Exception ignored) {}
+            Toast.makeText(this, R.string.backup_exported, Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, R.string.backup_import_bad, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** نافذة استيراد: لصق النص JSON واستعادته */
+    private void importBackupDialog() {
+        final EditText in = new EditText(this);
+        in.setHint(R.string.backup_import_hint);
+        in.setTextColor(0xFFEDF0FF);
+        in.setHintTextColor(0xFF6B7398);
+        in.setTextSize(12);
+        in.setMinLines(4);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(10));
+        bg.setColor(0xFF0E1428);
+        bg.setStroke(dp(1), 0xFF2A3562);
+        in.setBackground(bg);
+        in.setPadding(dp(12), dp(10), dp(12), dp(10));
+        // لصق تلقائي من الحافظة إن كانت تبدأ كنسخة احتياطية
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0) {
+                CharSequence cs = cm.getPrimaryClip().getItemAt(0).coerceToText(this);
+                if (cs != null && cs.toString().contains("\"DRS-Smart-Keyboard\"")) {
+                    in.setText(cs.toString());
+                }
+            }
+        } catch (Exception ignored) {}
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_import_title)
+                .setView(in)
+                .setPositiveButton(R.string.btn_backup_import, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        applyBackup(in.getText().toString());
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void applyBackup(String text) {
+        try {
+            JSONObject o = new JSONObject(text);
+            if (!"DRS-Smart-Keyboard".equals(o.optString("app"))) throw new Exception("bad");
+            if (o.has("theme")) prefs.setThemePreset(o.getInt("theme"));
+            if (o.has("sound")) prefs.setSound(o.getBoolean("sound"));
+            if (o.has("haptics")) prefs.setHaptics(o.getBoolean("haptics"));
+            if (o.has("numRow")) prefs.setNumRow(o.getBoolean("numRow"));
+            if (o.has("autoCap")) prefs.setAutoCap(o.getBoolean("autoCap"));
+            if (o.has("doubleSpace")) prefs.setDoubleSpace(o.getBoolean("doubleSpace"));
+            if (o.has("suggest")) prefs.setSuggest(o.getBoolean("suggest"));
+            if (o.has("autoCorrect")) prefs.setAutoCorrect(o.getBoolean("autoCorrect"));
+            if (o.has("keyHeight")) prefs.setKeyHeight(o.getInt("keyHeight"));
+            if (o.has("oneHanded")) prefs.setOneHanded(o.getInt("oneHanded"));
+            if (o.has("voice")) prefs.setVoice(o.getBoolean("voice"));
+            if (o.has("arabicDigits")) prefs.setArabicDigits(o.getBoolean("arabicDigits"));
+            if (o.has("accent")) prefs.setAccent(o.getInt("accent"));
+            if (o.has("nextWord")) prefs.setNextWord(o.getBoolean("nextWord"));
+            if (o.has("glide")) prefs.setGlide(o.getBoolean("glide"));
+            if (o.has("incognito")) prefs.setIncognito(o.getBoolean("incognito"));
+            if (o.has("soundStyle")) prefs.setSoundStyle(o.getInt("soundStyle"));
+            if (o.has("longPress")) prefs.setLongPressIdx(o.getInt("longPress"));
+            engine.importLearned(o.optString("learned", ""));
+            engine.importBigrams(o.optString("bigrams", ""));
+            engine.importShortcuts(o.optString("shortcuts", ""));
+            android.content.SharedPreferences.Editor pe =
+                    getSharedPreferences("kb_panel", Context.MODE_PRIVATE).edit();
+            pe.putString("clips", o.optString("clips", ""));
+            pe.putString("pins", o.optString("pins", ""));
+            pe.putString("emoji_recents", o.optString("emoji", ""));
+            pe.apply();
+            Toast.makeText(this, R.string.backup_import_ok, Toast.LENGTH_LONG).show();
+            buildSections();
+        } catch (Exception e) {
+            Toast.makeText(this, R.string.backup_import_bad, Toast.LENGTH_SHORT).show();
+        }
     }
 
     // ==================== أدوات بناء الواجهة ====================

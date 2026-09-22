@@ -11,7 +11,7 @@
     <string name="act_go">اذهب</string>
 
     <string name="header_title">DRS Smart Keyboard</string>
-    <string name="header_sub">لوحة مفاتيح ذكية متكاملة: ست لغات، تنبؤ بالكلمات والكلمة التالية، تصحيح تلقائي مع تراجع، إدخال صوتي، حافظة بتثبيت، لوحة تحرير نص، إيموجي مصنّف، و12 ثيماً بألوان تمييز مخصصة</string>
+    <string name="header_sub">لوحة مفاتيح ذكية متكاملة: ست لغات، كتابة بالسحب، تنبؤ بالكلمات والكلمة التالية، تصحيح تلقائي، اختصارات نصية، إدخال صوتي، وضع عائم، حافظة بتثبيت، وضع تخفي، و16 ثيماً بألوان تمييز مخصصة</string>
 
     <string name="card_status_title">حالة لوحة المفاتيح</string>
     <string name="btn_enable">١. تفعيل اللوحة في إعدادات النظام</string>
@@ -50,6 +50,18 @@
     <string name="sw_autocap">حرف كبير تلقائي في اللغات اللاتينية</string>
     <string name="sw_double_space">نقطة تلقائية بضغطتين على المسافة</string>
     <string name="sw_next_word">التنبؤ بالكلمة التالية (من ثنائيات الكلمات)</string>
+    <string name="sw_glide">الكتابة بالسحب (مرّر إصبعك على الحروف)</string>
+    <string name="sw_incognito">الوضع التخفي (بلا تعلّم أو سجل — قابل للتبديل من الدرع في اللوحة)</string>
+    <string name="incognito_on">الوضع التخفي مفعّل 🕶 — لن يُحفظ أي شيء</string>
+    <string name="incognito_off">تم إيقاف الوضع التخفي</string>
+    <string name="label_sound_style">نمط صوت النقر</string>
+    <string name="snd_classic">كلاسيكي</string>
+    <string name="snd_digital">رقمي</string>
+    <string name="snd_soft">ناعم</string>
+    <string name="label_longpress">مدة الضغط المطوّل</string>
+    <string name="lp_fast">سريع</string>
+    <string name="lp_normal">عادي</string>
+    <string name="lp_slow">بطيء</string>
     <string name="sw_voice">زر الإدخال الصوتي (المايكروفون)</string>
     <string name="sw_arabic_digits">أرقام عربية-هندية في لوحة الأرقام (٠١٢٣)</string>
     <string name="section_sound">الصوت والاهتزاز</string>
@@ -71,12 +83,39 @@
     <string name="dict_count">كلمات متعلمة: %1$d</string>
     <string name="btn_dict_reset">تصفير الكلمات المتعلمة</string>
     <string name="dict_reset_done">تم تصفير القاموس ✔</string>
+
+    <!-- الاختصارات النصية -->
+    <string name="section_shortcuts">الاختصارات النصية</string>
+    <string name="shortcuts_info">اكتب الاختصار ثم مسافة فيتوسّع تلقائياً للنص الكامل — مثال: «سلام» تصبح «السلام عليكم ورحمة الله وبركاته».</string>
+    <string name="shortcut_abbr_hint">الاختصار (كلمة قصيرة)</string>
+    <string name="shortcut_exp_hint">التوسيع الكامل (العبارة الطويلة)</string>
+    <string name="btn_shortcut_add">إضافة الاختصار</string>
+    <string name="shortcut_added">تمت إضافة الاختصار ✔</string>
+    <string name="shortcut_deleted">تم حذف الاختصار</string>
+    <string name="shortcuts_none">لا توجد اختصارات بعد — أضف أول اختصار لك أدناه.</string>
+
+    <!-- النسخ الاحتياطي -->
+    <string name="section_backup">النسخ الاحتياطي والاستعادة</string>
+    <string name="backup_info">صدّر إعداداتك وقاموسك المتعلم واختصاراتك وحافظتك في نص واحد، ثم استوردها على أي جهاز.</string>
+    <string name="btn_backup_export">تصدير نسخة احتياطية</string>
+    <string name="btn_backup_import">استيراد نسخة احتياطية</string>
+    <string name="backup_exported">تم تصدير النسخة إلى الحافظة — أرسلها لنفسك بأي طريقة ✔</string>
+    <string name="backup_import_title">لصق النسخة الاحتياطية</string>
+    <string name="backup_import_hint">الصق هنا نص النسخة الاحتياطية الذي يبدأ بـ {"…</string>
+    <string name="backup_import_ok">تمت الاستعادة بنجاح ✔</string>
+    <string name="backup_import_bad">النسخة غير صالحة — تأكد من لصق النص كاملاً</string>
     <string name="card_try_title">جرّب لوحة المفاتيح</string>
     <string name="try_hint">اكتب هنا بالعربية أو الإنجليزية…</string>
 
     <string name="about_title">حول التطبيق</string>
-    <string name="about_version">DRS Smart Keyboard — الإصدار 2.1</string>
-    <string name="about_body">لوحة مفاتيح عربية ذكية مبنية بحب: عربي كامل بالتطبيع الذكي والحركات، ست لغات، تنبؤ بالكلمات والكلمة التالية، تصحيح تلقائي قابل للتراجع، إدخال صوتي، حافظة بتثبيت، لوحة أرقام كاملة، تحرير نص، إيموجي مصنّف، و12 ثيماً بثمانية ألوان تمييز.</string>
+    <string name="about_version">DRS Smart Keyboard — الإصدار 2.2</string>
+    <string name="about_body">لوحة مفاتيح عربية ذكية مبنية بحب: كتابة بالسحب مع أثر ملون، ست لغات، تنبؤ بالكلمات والكلمة التالية، تصحيح تلقائي قابل للتراجع، اختصارات نصية تتوسع تلقائياً، وضع عائم قابل للسحب، إدخال صوتي، حافظة بتثبيت، وضع تخفي، نسخ احتياطي كامل، لوحة أرقام، تحرير نص، إيموجي مصنّف، و16 ثيماً بثمانية ألوان تمييز.</string>
 
-    <string name="footer_tips">نصائح: اضغط مطولاً على ⇧ للقفل — على أي حرف لعرض التشكيل والبدائل — على ؟١٢٣ لفتح لوحة الأرقام الكاملة — اسحب على المسافة لتحريك المؤشر — الحذف بعد التصحيح التلقائي يعيد كلمتك الأصلية — اضغط مطولاً على عناصر الحافظة لتثبيتها — الماييكروفون يكتب ما تنطقه مباشرة.</string>
+    <string name="footer_tips">نصائح: مرّر إصبعك على الحروف لكتابة الكلمة كاملة بضربة واحدة — من زر «تحرير» فعّل «عائم» لسحب اللوحة لأي مكان — اضغط مطولاً على ⇧ للقفل — على أي حرف لعرض التشكيل والبدائل — اسحب على المسافة لتحريك المؤشر — الدرع في الشريط يفعّل التخفي — اكتب «سلام» ثم مسافة لتجربة الاختصارات.</string>
+
+    <!-- الوضع العائم -->
+    <string name="float_dock">⚓ رسو</string>
+    <string name="float_title">الوضع العائم — اسحب ☰ للتحريك</string>
+    <string name="float_return">⚓ اللوحة عائمة — اضغط هنا لإرجاعها</string>
+    <string name="float_on">الوضع العائم مفعّل — اسحب ☰ لتحريك اللوحة</string>
 </resources>

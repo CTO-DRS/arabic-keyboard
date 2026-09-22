@@ -37,6 +37,8 @@ public class SuggestEngine {
     /** ثنائيات متعلمة من المستخدم: "أ|ب" ← تكرار */
     private final Map<String, Integer> biLearned = new HashMap<>();
     private final SharedPreferences sp;
+    /** اختصارات نصية: {اختصار، توسيع} مرتبة بإضافة المستخدم */
+    private final ArrayList<String[]> shortcuts = new ArrayList<>();
 
     public SuggestEngine(Context c) {
         sp = c.getSharedPreferences("kb_suggest", Context.MODE_PRIVATE);
@@ -46,6 +48,7 @@ public class SuggestEngine {
         loadBigrams();
         loadBiLearned();
         loadLearned();
+        loadShortcuts();
     }
 
     private void loadDict(String raw, Map<String, Integer> out) {
@@ -128,6 +131,172 @@ public class SuggestEngine {
 
     /** عدد الكلمات التي تعلّمها المحرك من المستخدم */
     public int learnedCount() { return learned.size(); }
+
+    // ==================== الاختصارات النصية ====================
+
+    private void loadShortcuts() {
+        shortcuts.clear();
+        String blob = sp.getString("shortcuts", null);
+        if (blob == null) {
+            // بذرة أولى مفيدة عند أول تشغيل
+            shortcuts.add(new String[]{"سلام", "السلام عليكم ورحمة الله وبركاته"});
+            shortcuts.add(new String[]{"صباح", "صباح الخير يا صديقي 🌞"});
+            saveShortcuts();
+            return;
+        }
+        for (String entry : blob.split("\u0001")) {
+            int p = entry.indexOf("\u0003");
+            if (p > 0) {
+                String ab = entry.substring(0, p).trim();
+                String ex = entry.substring(p + 1);
+                if (!ab.isEmpty() && !ex.isEmpty()) shortcuts.add(new String[]{ab, ex});
+            }
+        }
+    }
+
+    private void saveShortcuts() {
+        StringBuilder sb = new StringBuilder();
+        for (String[] s : shortcuts) {
+            if (sb.length() > 0) sb.append('\u0001');
+            sb.append(s[0]).append('\u0003').append(s[1]);
+        }
+        sp.edit().putString("shortcuts", sb.toString()).apply();
+    }
+
+    public ArrayList<String[]> getShortcuts() { return new ArrayList<>(shortcuts); }
+
+    public void addShortcut(String abbr, String expansion) {
+        if (abbr == null || expansion == null) return;
+        abbr = abbr.trim();
+        expansion = expansion.trim();
+        if (abbr.isEmpty() || expansion.isEmpty() || abbr.length() > 24) return;
+        removeShortcut(abbr); // استبدال أي تعريف سابق لنفس الاختصار
+        shortcuts.add(new String[]{abbr, expansion});
+        saveShortcuts();
+    }
+
+    public void removeShortcut(String abbr) {
+        for (int i = shortcuts.size() - 1; i >= 0; i--) {
+            if (shortcuts.get(i)[0].equals(abbr)) shortcuts.remove(i);
+        }
+        saveShortcuts();
+    }
+
+    public void clearShortcuts() {
+        shortcuts.clear();
+        saveShortcuts();
+    }
+
+    /** توسيع الاختصار إن وُجد (الإنجليزية غير حساسة لحالة الأحرف) */
+    public String shortcutExpansion(String word, int lang) {
+        if (word == null || word.isEmpty()) return null;
+        for (String[] s : shortcuts) {
+            if (lang == 1) {
+                if (s[0].equalsIgnoreCase(word)) return s[1];
+            } else if (s[0].equals(word)) {
+                return s[1];
+            }
+        }
+        return null;
+    }
+
+    // ==================== الكتابة بالسحب (Glide) ====================
+
+    /** هل الكلمة سلسلة فرعية (بترتيب) من الحروف المرصودة؟ */
+    private static boolean isSubsequence(String word, String letters) {
+        int i = 0;
+        for (int j = 0; j < letters.length() && i < word.length(); j++) {
+            if (word.charAt(i) == letters.charAt(j)) i++;
+        }
+        return i == word.length();
+    }
+
+    /**
+     * كلمات مرشّحة للسحب: كلمات يمكن رسمها بتمرير الإصبع على نفس الحروف
+     * بالترتيب (كلمة ⊆ حروف المسار)، مرتبة بالتردد.
+     */
+    public List<Map.Entry<String, Integer>> glideCandidates(String letters, int lang) {
+        List<Map.Entry<String, Integer>> out = new ArrayList<>();
+        if (letters == null || letters.length() < 2) return out;
+        if (lang == 1) letters = letters.toLowerCase(Locale.ENGLISH);
+        else letters = normAr(letters);
+        Map<String, Integer> dict = (lang == 1) ? enWords : arWords;
+        for (Map.Entry<String, Integer> e : dict.entrySet()) {
+            String w = lang == 1 ? e.getKey() : normAr(e.getKey());
+            if (w.length() < 2 || w.length() > letters.length()) continue;
+            if (isSubsequence(w, letters)) out.add(new HashMap.SimpleEntry<>(e.getKey(), e.getValue()));
+            if (out.size() >= 60) break;
+        }
+        // الكلمات المتعلمة (بأولوية أعلى)
+        for (Map.Entry<String, Integer> e : learned.entrySet()) {
+            if (out.size() >= 80) break;
+            String w = lang == 1 ? e.getKey() : normAr(e.getKey());
+            if (w.length() < 2 || w.length() > letters.length()) continue;
+            if (isSubsequence(w, letters)) out.add(new HashMap.SimpleEntry<>(e.getKey(), e.getValue() + 50));
+        }
+        out.sort((a, b) -> b.getValue() - a.getValue());
+        return out;
+    }
+
+    // ==================== تصدير/استيراد بيانات المحرك ====================
+
+    /** سلسلة الكلمات المتعلمة الخام (للنسخ الاحتياطي) */
+    public String exportLearned() { return sp.getString("learned", ""); }
+
+    /** سلسلة الثنائيات المتعلمة الخام (للنسخ الاحتياطي) */
+    public String exportBigrams() { return sp.getString("bigrams", ""); }
+
+    /** سلسلة الاختصارات الخام (للنسخ الاحتياطي) */
+    public String exportShortcuts() { return sp.getString("shortcuts", ""); }
+
+    /** استيراد الكلمات المتعلمة من نسخة احتياطية (يدمج مع الموجود) */
+    public void importLearned(String blob) {
+        if (blob == null) return;
+        for (String entry : blob.split("\u0001")) {
+            int p = entry.lastIndexOf('|');
+            if (p > 0) {
+                try {
+                    String w = entry.substring(0, p);
+                    int f = Integer.parseInt(entry.substring(p + 1));
+                    Integer cur = learned.get(w);
+                    learned.put(w, Math.max(f, cur == null ? 0 : cur));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        saveLearned();
+    }
+
+    /** استيراد الثنائيات من نسخة احتياطية (يدمج مع الموجود) */
+    public void importBigrams(String blob) {
+        if (blob == null) return;
+        for (String entry : blob.split("\u0001")) {
+            int p = entry.lastIndexOf('|');
+            if (p > 0) {
+                try {
+                    String k = entry.substring(0, p);
+                    int f = Integer.parseInt(entry.substring(p + 1));
+                    Integer cur = biLearned.get(k);
+                    biLearned.put(k, Math.max(f, cur == null ? 0 : cur));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        // حفظ عبر نفس مسار learnBigram
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Integer> e : biLearned.entrySet()) {
+            if (sb.length() > 0) sb.append('\u0001');
+            sb.append(e.getKey()).append('|').append(e.getValue());
+        }
+        sp.edit().putString("bigrams", sb.toString()).apply();
+    }
+
+    /** استيراد الاختصارات من نسخة احتياطية (يدمج مع الموجود) */
+    public void importShortcuts(String blob) {
+        if (blob == null || blob.isEmpty()) return;
+        for (String entry : blob.split("\u0001")) {
+            int p = entry.indexOf("\u0003");
+            if (p > 0) addShortcut(entry.substring(0, p), entry.substring(p + 1));
+        }
+    }
 
     /** حذف كل الكلمات المتعلّمة */
     public void resetLearned() {
@@ -345,6 +514,17 @@ public class SuggestEngine {
         if (en) prefix = prefix.toLowerCase(Locale.ENGLISH);
         if (prefix.length() > 24) return out;
 
+        String norm = null;
+        if (!en) norm = normAr(prefix);
+
+        // 0) توسيع الاختصارات المطابقة للبادئة (أولوية قصوى)
+        for (String[] s : shortcuts) {
+            if (out.size() >= MAX_SUGGESTIONS) break;
+            String ab = en ? s[0].toLowerCase(Locale.ENGLISH) : s[0];
+            boolean hit = en ? ab.startsWith(prefix) : normAr(ab).startsWith(norm);
+            if (hit && !out.contains(s[1])) out.add(s[1]);
+        }
+
         // 1) كلمات متعلمة تبدأ بنفس البادئة (مرتبة بالتكرار)
         List<Map.Entry<String, Integer>> learnedHits = new ArrayList<>();
         for (Map.Entry<String, Integer> e : learned.entrySet()) {
@@ -365,8 +545,7 @@ public class SuggestEngine {
                     if (w.startsWith(prefix)) pref.add(e);
                 }
             } else {
-                // عربي: مطابقة عبر الفهرس المُطبَّع (تجاهل الهمزات والتاء)
-                String norm = normAr(prefix);
+                // عربي: مطابقة عبر الفهرس المُطبَّع (تجاهل الهمزات والتاء) — norm محسوبة مسبقاً
                 for (Map.Entry<String, String> e : arNormKey.entrySet()) {
                     if (e.getKey().equals(norm)) continue;
                     if (e.getKey().startsWith(norm)) {
